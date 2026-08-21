@@ -31,7 +31,12 @@ export function getReviews(): Review[] {
     }
 
     const parsedReviews: unknown = JSON.parse(storedReviews);
-    return Array.isArray(parsedReviews) ? (parsedReviews as Review[]) : [];
+    return Array.isArray(parsedReviews)
+      ? parsedReviews.map((review) => ({
+        ...(review as Review),
+        likedBy: Array.isArray((review as Review).likedBy) ? (review as Review).likedBy : [],
+      }))
+      : [];
   } catch {
     return [];
   }
@@ -52,7 +57,7 @@ export function saveReview(review: Review): Review[] {
     return reviews;
   }
 
-  const updatedReviews = [...reviews, review];
+  const updatedReviews = [...reviews, { ...review, likedBy: review.likedBy ?? [] }];
   const storage = getLocalStorage();
 
   if (!storage) {
@@ -77,6 +82,34 @@ export function updateReview(id: string, data: Partial<Omit<Review, 'id'>>): Rev
 
   const updatedReviews = [...reviews];
   updatedReviews[reviewIndex] = { ...updatedReviews[reviewIndex], ...data, id };
+  const storage = getLocalStorage();
+
+  if (!storage) {
+    return reviews;
+  }
+
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(updatedReviews));
+    return updatedReviews;
+  } catch {
+    return reviews;
+  }
+}
+
+export function toggleLike(reviewId: string, userId: string): Review[] {
+  const reviews = getReviews();
+  const reviewIndex = reviews.findIndex((review) => review.id === reviewId);
+
+  if (reviewIndex === -1) {
+    return reviews;
+  }
+
+  const review = reviews[reviewIndex];
+  const likedBy = review.likedBy.includes(userId)
+    ? review.likedBy.filter((id) => id !== userId)
+    : [...review.likedBy, userId];
+  const updatedReviews = [...reviews];
+  updatedReviews[reviewIndex] = { ...review, likedBy };
   const storage = getLocalStorage();
 
   if (!storage) {

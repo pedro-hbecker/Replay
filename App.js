@@ -17,8 +17,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { getAlbumById, getAlbums, removeAlbum, saveAlbum, updateAlbum } from './services/albumStorage';
+import { getCommentsByReview, removeComment, saveComment } from './services/commentStorage';
 import { musicSearch } from './services/musicSearch';
-import { getReviewsByAlbum, saveReview, updateReview } from './services/reviewStorage';
+import { getReviewsByAlbum, saveReview, toggleLike, updateReview } from './services/reviewStorage';
 import { getCurrentUser, saveUser, updateUser } from './services/userStorage';
 
 const palette = {
@@ -289,7 +290,43 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
   return <View style={styles.explore}><View style={styles.exploreHeader}><View><Text style={styles.eyebrow}>BIBLIOTECA</Text><Text style={styles.pageTitle}>Explorar</Text></View><Pressable onPress={() => setIsModalVisible(true)} style={styles.addButton}><Text style={styles.addButtonPlus}>+</Text><Text style={styles.addButtonText}>ADICIONAR ALBUM</Text></Pressable></View>{albums.length === 0 ? <View style={styles.emptyState}><Text style={styles.emptyMark}>02</Text><Text style={styles.emptyTitle}>Sua biblioteca{`\n`}comeca aqui.</Text><Text style={styles.emptyCopy}>Adicione o primeiro album para montar sua colecao no Replay.</Text><Pressable onPress={() => setIsModalVisible(true)} style={styles.emptyButton}><Text style={styles.emptyButtonText}>ADICIONAR PRIMEIRO ALBUM</Text></Pressable></View> : <FlatList key={columnCount} data={albums} numColumns={columnCount} keyExtractor={(item) => item.id} renderItem={({ item }) => <AlbumCard album={item} cardWidth={cardWidth} onPress={() => onAlbumPress(item)} />} columnWrapperStyle={styles.gridRow} contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false} /> }<AddAlbumModal visible={isModalVisible} onClose={() => setIsModalVisible(false)} onSaved={(album) => { onAlbumAdded(album); setIsModalVisible(false); }} /></View>;
 }
 
+function ReviewComments({ review, currentUser }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [commentText, setCommentText] = useState('');
+
+  useEffect(() => {
+    if (isExpanded) setComments(getCommentsByReview(review.id));
+  }, [isExpanded, review.id]);
+
+  function handleAddComment() {
+    const text = commentText.trim();
+    if (!text) return;
+
+    const comment = {
+      id: globalThis.crypto?.randomUUID?.() || `comment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      reviewId: review.id,
+      userId: currentUser.id,
+      text,
+      createdAt: new Date().toISOString(),
+    };
+
+    setComments(saveComment(comment).filter((item) => item.reviewId === review.id));
+    setCommentText('');
+  }
+
+  function handleRemoveComment(comment) {
+    Alert.alert('Excluir comentario', 'Tem certeza que deseja excluir este comentario?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Excluir', style: 'destructive', onPress: () => setComments(removeComment(comment.id).filter((item) => item.reviewId === review.id)) },
+    ]);
+  }
+
+  return <View style={styles.commentThread}><Pressable onPress={() => setIsExpanded((expanded) => !expanded)} style={styles.commentToggle}><Text style={styles.commentToggleText}>▢ {comments.length || getCommentsByReview(review.id).length} comentarios</Text><Text style={styles.commentToggleArrow}>{isExpanded ? '−' : '+'}</Text></Pressable>{isExpanded && <View style={styles.commentContent}>{comments.map((comment) => <View key={comment.id} style={styles.commentItem}><View style={styles.commentHeader}><Text style={styles.commentAuthor}>{comment.userId === currentUser.id ? currentUser.name : comment.userId}</Text>{comment.userId === currentUser.id && <Pressable onPress={() => handleRemoveComment(comment)}><Text style={styles.commentDelete}>EXCLUIR</Text></Pressable>}</View><Text style={styles.commentBody}>{comment.text}</Text></View>)}<View style={styles.commentInputRow}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Escreva um comentario" placeholderTextColor={palette.text} style={styles.commentInput} multiline /><Pressable onPress={handleAddComment} style={styles.commentSendButton}><Text style={styles.commentSendText}>ENVIAR</Text></Pressable></View></View>}</View>;
+}
+
 function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
+  const normalizedAlbumId = String(albumId);
   const existingReview = reviews.find((review) => review.userId === currentUser.id);
   const [rating, setRating] = useState(existingReview?.rating || 0.5);
   const [reviewText, setReviewText] = useState(existingReview?.reviewText || '');
@@ -304,18 +341,35 @@ function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
   function handleSaveReview() {
     const review = {
       id: existingReview?.id || globalThis.crypto?.randomUUID?.() || `review-${Date.now()}`,
-      albumId,
+      albumId: normalizedAlbumId,
       userId: currentUser.id,
       rating,
       reviewText: reviewText.trim() || undefined,
       createdAt: existingReview?.createdAt || new Date().toISOString(),
+      likedBy: existingReview?.likedBy ?? [],
     };
 
-    const updatedReviews = existingReview ? updateReview(existingReview.id, review) : saveReview(review);
-    onReviewsChange(updatedReviews.filter((item) => item.albumId === albumId));
+    if (existingReview) {
+      updateReview(existingReview.id, review);
+    } else {
+      saveReview(review);
+    }
+    onReviewsChange(getReviewsByAlbum(normalizedAlbumId));
   }
 
-  return <View style={styles.reviewSection}><View style={styles.ratingSummary}><Text style={styles.reviewSectionTitle}>Avaliacoes</Text><View style={styles.averageBox}><Text style={styles.averageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.averageStars}>{average ? '★' : '☆'}</Text><Text style={styles.reviewCount}>{reviews.length} {reviews.length === 1 ? 'avaliacao' : 'avaliacoes'}</Text></View></View><Text style={styles.fieldLabel}>{existingReview ? 'SUA AVALIACAO' : 'AVALIE ESTE ALBUM'}</Text><View style={styles.ratingOptions}>{Array.from({ length: 10 }, (_, index) => (index + 1) / 2).map((option) => <Pressable key={option} onPress={() => setRating(option)} style={[styles.ratingOption, rating === option && styles.ratingOptionActive]}><Text style={[styles.ratingOptionText, rating === option && styles.ratingOptionTextActive]}>{option} ★</Text></Pressable>)}</View><TextInput value={reviewText} onChangeText={setReviewText} placeholder="Escreva uma resenha (opcional)" placeholderTextColor={palette.text} style={[styles.formInput, styles.reviewInput]} multiline textAlignVertical="top" /><Pressable onPress={handleSaveReview} style={styles.createButton}><Text style={styles.createButtonText}>{existingReview ? 'ATUALIZAR AVALIACAO' : 'SALVAR AVALIACAO'}</Text></Pressable><View style={styles.reviewList}>{reviews.length === 0 ? <Text style={styles.profileSecondary}>Ainda nao ha avaliacoes para este album.</Text> : reviews.map((review) => <View key={review.id} style={styles.reviewItem}><View style={styles.reviewItemHeader}><Text style={styles.reviewerName}>{review.userId === currentUser.id ? currentUser.name : review.userId}</Text><Text style={styles.reviewRating}>{review.rating.toFixed(1)} ★</Text></View>{Boolean(review.reviewText) && <Text style={styles.reviewText}>{review.reviewText}</Text>}</View>)}</View></View>;
+  return <View style={styles.reviewSection}><View style={styles.ratingSummary}><Text style={styles.reviewSectionTitle}>Avaliacoes</Text><View style={styles.averageBox}><Text style={styles.averageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.averageStars}>{average ? '★' : '☆'}</Text><Text style={styles.reviewCount}>{reviews.length} {reviews.length === 1 ? 'avaliacao' : 'avaliacoes'}</Text></View></View><Text style={styles.fieldLabel}>{existingReview ? 'SUA AVALIACAO' : 'AVALIE ESTE ALBUM'}</Text><View style={styles.ratingOptions}>{Array.from({ length: 10 }, (_, index) => (index + 1) / 2).map((option) => <Pressable key={option} onPress={() => setRating(option)} style={[styles.ratingOption, rating === option && styles.ratingOptionActive]}><Text style={[styles.ratingOptionText, rating === option && styles.ratingOptionTextActive]}>{option} ★</Text></Pressable>)}</View><TextInput value={reviewText} onChangeText={setReviewText} placeholder="Escreva uma resenha (opcional)" placeholderTextColor={palette.text} style={[styles.formInput, styles.reviewInput]} multiline textAlignVertical="top" /><Pressable onPress={handleSaveReview} style={styles.createButton}><Text style={styles.createButtonText}>{existingReview ? 'ATUALIZAR AVALIACAO' : 'SALVAR AVALIACAO'}</Text></Pressable><View style={styles.reviewList}>{reviews.length === 0 ? <Text style={styles.profileSecondary}>Ainda nao ha avaliacoes para este album.</Text> : reviews.map((review) => <ReviewItem key={review.id} review={review} currentUser={currentUser} onReviewsChange={onReviewsChange} />)}</View></View>;
+}
+
+function ReviewItem({ review, currentUser, onReviewsChange }) {
+  const likedBy = Array.isArray(review.likedBy) ? review.likedBy : [];
+  const isLiked = likedBy.includes(currentUser.id);
+
+  function handleToggleLike() {
+    const updatedReviews = toggleLike(review.id, currentUser.id);
+    onReviewsChange(updatedReviews.filter((item) => item.albumId === review.albumId));
+  }
+
+  return <View style={styles.reviewItem}><View style={styles.reviewItemHeader}><Text style={styles.reviewerName}>{review.userId === currentUser.id ? currentUser.name : review.userId}</Text><Text style={styles.reviewRating}>{review.rating.toFixed(1)} ★</Text></View>{Boolean(review.reviewText) && <Text style={styles.reviewText}>{review.reviewText}</Text>}<View style={styles.reviewSocialRow}><Pressable onPress={handleToggleLike} style={styles.socialButton}><Text style={[styles.likeIcon, isLiked && styles.likeIconActive]}>♥</Text><Text style={[styles.socialCount, isLiked && styles.socialCountActive]}>{likedBy.length}</Text></Pressable><ReviewComments review={review} currentUser={currentUser} /></View></View>;
 }
 
 function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete }) {
@@ -537,6 +591,26 @@ const styles = StyleSheet.create({
   reviewerName: { color: '#F5F5F5', fontSize: 13, fontWeight: '700' },
   reviewRating: { color: palette.accent, fontSize: 12, fontWeight: '800' },
   reviewText: { color: palette.text, fontSize: 13, lineHeight: 19 },
+  reviewSocialRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 18 },
+  socialButton: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  likeIcon: { color: palette.text, fontSize: 17 },
+  likeIconActive: { color: palette.accent },
+  socialCount: { color: palette.text, fontSize: 11 },
+  socialCountActive: { color: palette.accent },
+  commentThread: { flex: 1 },
+  commentToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  commentToggleText: { color: palette.text, fontSize: 11 },
+  commentToggleArrow: { color: palette.accent, fontSize: 18, lineHeight: 18 },
+  commentContent: { marginTop: 10, backgroundColor: palette.surface, padding: 10, borderRadius: 8 },
+  commentItem: { paddingBottom: 10, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: palette.border },
+  commentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  commentAuthor: { color: '#F5F5F5', fontSize: 11, fontWeight: '700' },
+  commentDelete: { color: '#FF6B6B', fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
+  commentBody: { color: palette.text, fontSize: 12, lineHeight: 18 },
+  commentInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 },
+  commentInput: { flex: 1, minHeight: 40, maxHeight: 80, borderWidth: 1, borderColor: palette.border, color: '#F5F5F5', paddingHorizontal: 9, paddingVertical: 8, fontSize: 11 },
+  commentSendButton: { backgroundColor: palette.accent, minHeight: 40, justifyContent: 'center', paddingHorizontal: 10 },
+  commentSendText: { color: palette.background, fontSize: 8, fontWeight: '900', letterSpacing: 0.5 },
   navBar: { height: 76, borderTopWidth: 1, borderTopColor: palette.border, backgroundColor: '#0D100F', flexDirection: 'row', paddingHorizontal: 10, paddingTop: 12 },
   navItem: { flex: 1, alignItems: 'center', gap: 5 },
   navMark: { color: palette.text, fontSize: 10, fontWeight: '700' },

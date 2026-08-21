@@ -5,4 +5,5 @@ export interface Review {
   rating: number;
   reviewText?: string;
   createdAt: string;
+  likedBy: string[];
 }
