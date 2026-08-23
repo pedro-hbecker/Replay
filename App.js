@@ -19,6 +19,7 @@ import {
 import { getAlbumById, getAlbums, removeAlbum, saveAlbum, updateAlbum } from './services/albumStorage';
 import { getCommentsByReview, removeComment, saveComment } from './services/commentStorage';
 import { musicSearch } from './services/musicSearch';
+import { getTrendingAlbums } from './services/trendingAlbums';
 import { getReviewsByAlbum, saveReview, toggleLike, updateReview } from './services/reviewStorage';
 import { getCurrentUser, saveUser, updateUser } from './services/userStorage';
 
@@ -283,23 +284,133 @@ function AddAlbumModal({ visible, onClose, onSaved, initialAlbum = null }) {
 
 function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [trending, setTrending] = useState([]);
+  const [loadingTrending, setLoadingTrending] = useState(false);
   const { width } = useWindowDimensions();
   const columnCount = width >= 700 ? 4 : width >= 440 ? 3 : 2;
   const cardWidth = (width - 40 - (columnCount - 1) * 14) / columnCount;
 
-  return <View style={styles.explore}><View style={styles.exploreHeader}><View><Text style={styles.eyebrow}>BIBLIOTECA</Text><Text style={styles.pageTitle}>Explorar</Text></View><Pressable onPress={() => setIsModalVisible(true)} style={styles.addButton}><Text style={styles.addButtonPlus}>+</Text><Text style={styles.addButtonText}>ADICIONAR ALBUM</Text></Pressable></View>{albums.length === 0 ? <View style={styles.emptyState}><Text style={styles.emptyMark}>02</Text><Text style={styles.emptyTitle}>Sua biblioteca{`\n`}comeca aqui.</Text><Text style={styles.emptyCopy}>Adicione o primeiro album para montar sua colecao no Replay.</Text><Pressable onPress={() => setIsModalVisible(true)} style={styles.emptyButton}><Text style={styles.emptyButtonText}>ADICIONAR PRIMEIRO ALBUM</Text></Pressable></View> : <FlatList key={columnCount} data={albums} numColumns={columnCount} keyExtractor={(item) => item.id} renderItem={({ item }) => <AlbumCard album={item} cardWidth={cardWidth} onPress={() => onAlbumPress(item)} />} columnWrapperStyle={styles.gridRow} contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false} /> }<AddAlbumModal visible={isModalVisible} onClose={() => setIsModalVisible(false)} onSaved={(album) => { onAlbumAdded(album); setIsModalVisible(false); }} /></View>;
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingTrending(true);
+        const results = await getTrendingAlbums();
+        if (mounted && Array.isArray(results) && results.length > 0) setTrending(results);
+      } catch {
+        // ignore errors and keep trending hidden
+      } finally {
+        if (mounted) setLoadingTrending(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function handleAddFromTrending(result) {
+    const album = { ...result, addedBy: 'apple', addedAt: new Date().toISOString() };
+    try {
+      await saveAlbum(album);
+      onAlbumAdded(album);
+      setTrending((current) => current.filter((item) => item.id !== result.id));
+    } catch {
+      // ignore
+    }
+  }
+
+  return (
+    <View style={styles.explore}>
+      <View style={styles.exploreHeader}>
+        <View>
+          <Text style={styles.eyebrow}>BIBLIOTECA</Text>
+          <Text style={styles.pageTitle}>Explorar</Text>
+        </View>
+        <Pressable onPress={() => setIsModalVisible(true)} style={styles.addButton}>
+          <Text style={styles.addButtonPlus}>+</Text>
+          <Text style={styles.addButtonText}>ADICIONAR ALBUM</Text>
+        </Pressable>
+      </View>
+
+      {trending.length > 0 && (
+        <View style={{ marginBottom: 18 }}>
+          <Text style={[styles.eyebrow, { marginLeft: 2 }]}>EM ALTA</Text>
+          <FlatList
+            data={trending}
+            horizontal
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <SearchResult album={item} onAdd={() => handleAddFromTrending(item)} />}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 4 }}
+          />
+        </View>
+      )}
+
+      {albums.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyMark}>02</Text>
+          <Text style={styles.emptyTitle}>Sua biblioteca{`\n`}comeca aqui.</Text>
+          <Text style={styles.emptyCopy}>Adicione o primeiro album para montar sua colecao no Replay.</Text>
+          <Pressable onPress={() => setIsModalVisible(true)} style={styles.emptyButton}>
+            <Text style={styles.emptyButtonText}>ADICIONAR PRIMEIRO ALBUM</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <FlatList
+          key={columnCount}
+          data={albums}
+          numColumns={columnCount}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <AlbumCard album={item} cardWidth={cardWidth} onPress={() => onAlbumPress(item)} />}
+          columnWrapperStyle={styles.gridRow}
+          contentContainerStyle={styles.gridContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      <AddAlbumModal
+        visible={isModalVisible}
+        onClose={() => setIsModalVisible(false)}
+        onSaved={(album) => {
+          onAlbumAdded(album);
+          setIsModalVisible(false);
+        }}
+      />
+    </View>
+  );
 }
 
 function ReviewComments({ review, currentUser }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState('');
+  const [commentCount, setCommentCount] = useState(0);
 
   useEffect(() => {
-    if (isExpanded) setComments(getCommentsByReview(review.id));
+    let mounted = true;
+
+    async function loadComments() {
+      try {
+        const all = await getCommentsByReview(review.id);
+        if (!mounted) return;
+        setCommentCount(Array.isArray(all) ? all.length : 0);
+        if (isExpanded) setComments(Array.isArray(all) ? all : []);
+      } catch {
+        if (!mounted) return;
+        setCommentCount(0);
+        if (isExpanded) setComments([]);
+      }
+    }
+
+    loadComments();
+
+    return () => {
+      mounted = false;
+    };
   }, [isExpanded, review.id]);
 
-  function handleAddComment() {
+  async function handleAddComment() {
     const text = commentText.trim();
     if (!text) return;
 
@@ -311,18 +422,38 @@ function ReviewComments({ review, currentUser }) {
       createdAt: new Date().toISOString(),
     };
 
-    setComments(saveComment(comment).filter((item) => item.reviewId === review.id));
-    setCommentText('');
+    try {
+      const all = await saveComment(comment);
+      const filtered = Array.isArray(all) ? all.filter((item) => item.reviewId === review.id) : [];
+      setComments(filtered);
+      setCommentCount(filtered.length);
+      setCommentText('');
+    } catch {
+      // ignore
+    }
   }
 
   function handleRemoveComment(comment) {
     Alert.alert('Excluir comentario', 'Tem certeza que deseja excluir este comentario?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: () => setComments(removeComment(comment.id).filter((item) => item.reviewId === review.id)) },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const all = await removeComment(comment.id);
+            const filtered = Array.isArray(all) ? all.filter((item) => item.reviewId === review.id) : [];
+            setComments(filtered);
+            setCommentCount(filtered.length);
+          } catch {
+            // ignore
+          }
+        },
+      },
     ]);
   }
 
-  return <View style={styles.commentThread}><Pressable onPress={() => setIsExpanded((expanded) => !expanded)} style={styles.commentToggle}><Text style={styles.commentToggleText}>▢ {comments.length || getCommentsByReview(review.id).length} comentarios</Text><Text style={styles.commentToggleArrow}>{isExpanded ? '−' : '+'}</Text></Pressable>{isExpanded && <View style={styles.commentContent}>{comments.map((comment) => <View key={comment.id} style={styles.commentItem}><View style={styles.commentHeader}><Text style={styles.commentAuthor}>{comment.userId === currentUser.id ? currentUser.name : comment.userId}</Text>{comment.userId === currentUser.id && <Pressable onPress={() => handleRemoveComment(comment)}><Text style={styles.commentDelete}>EXCLUIR</Text></Pressable>}</View><Text style={styles.commentBody}>{comment.text}</Text></View>)}<View style={styles.commentInputRow}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Escreva um comentario" placeholderTextColor={palette.text} style={styles.commentInput} multiline /><Pressable onPress={handleAddComment} style={styles.commentSendButton}><Text style={styles.commentSendText}>ENVIAR</Text></Pressable></View></View>}</View>;
+  return <View style={styles.commentThread}><Pressable onPress={() => setIsExpanded((expanded) => !expanded)} style={styles.commentToggle}><Text style={styles.commentToggleText}>▢ {commentCount} comentarios</Text><Text style={styles.commentToggleArrow}>{isExpanded ? '−' : '+'}</Text></Pressable>{isExpanded && <View style={styles.commentContent}>{comments.map((comment) => <View key={comment.id} style={styles.commentItem}><View style={styles.commentHeader}><Text style={styles.commentAuthor}>{comment.userId === currentUser.id ? currentUser.name : comment.userId}</Text>{comment.userId === currentUser.id && <Pressable onPress={() => handleRemoveComment(comment)}><Text style={styles.commentDelete}>EXCLUIR</Text></Pressable>}</View><Text style={styles.commentBody}>{comment.text}</Text></View>)}<View style={styles.commentInputRow}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Escreva um comentario" placeholderTextColor={palette.text} style={styles.commentInput} multiline /><Pressable onPress={handleAddComment} style={styles.commentSendButton}><Text style={styles.commentSendText}>ENVIAR</Text></Pressable></View></View>}</View>;
 }
 
 function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
@@ -349,35 +480,59 @@ function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
       likedBy: existingReview?.likedBy ?? [],
     };
 
-    if (existingReview) {
-      updateReview(existingReview.id, review);
-    } else {
-      saveReview(review);
-    }
-    onReviewsChange(getReviewsByAlbum(normalizedAlbumId));
+    (async () => {
+      try {
+        if (existingReview) {
+          await updateReview(existingReview.id, review);
+        } else {
+          await saveReview(review);
+        }
+        const updated = await getReviewsByAlbum(normalizedAlbumId);
+        onReviewsChange(updated);
+      } catch {
+        // ignore
+      }
+    })();
   }
 
   return <View style={styles.reviewSection}><View style={styles.ratingSummary}><Text style={styles.reviewSectionTitle}>Avaliacoes</Text><View style={styles.averageBox}><Text style={styles.averageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.averageStars}>{average ? '★' : '☆'}</Text><Text style={styles.reviewCount}>{reviews.length} {reviews.length === 1 ? 'avaliacao' : 'avaliacoes'}</Text></View></View><Text style={styles.fieldLabel}>{existingReview ? 'SUA AVALIACAO' : 'AVALIE ESTE ALBUM'}</Text><View style={styles.ratingOptions}>{Array.from({ length: 10 }, (_, index) => (index + 1) / 2).map((option) => <Pressable key={option} onPress={() => setRating(option)} style={[styles.ratingOption, rating === option && styles.ratingOptionActive]}><Text style={[styles.ratingOptionText, rating === option && styles.ratingOptionTextActive]}>{option} ★</Text></Pressable>)}</View><TextInput value={reviewText} onChangeText={setReviewText} placeholder="Escreva uma resenha (opcional)" placeholderTextColor={palette.text} style={[styles.formInput, styles.reviewInput]} multiline textAlignVertical="top" /><Pressable onPress={handleSaveReview} style={styles.createButton}><Text style={styles.createButtonText}>{existingReview ? 'ATUALIZAR AVALIACAO' : 'SALVAR AVALIACAO'}</Text></Pressable><View style={styles.reviewList}>{reviews.length === 0 ? <Text style={styles.profileSecondary}>Ainda nao ha avaliacoes para este album.</Text> : reviews.map((review) => <ReviewItem key={review.id} review={review} currentUser={currentUser} onReviewsChange={onReviewsChange} />)}</View></View>;
 }
 
 function ReviewItem({ review, currentUser, onReviewsChange }) {
-  const likedBy = Array.isArray(review.likedBy) ? review.likedBy : [];
+  const likedBy = review.likedBy ?? [];
   const isLiked = likedBy.includes(currentUser.id);
 
-  function handleToggleLike() {
-    const updatedReviews = toggleLike(review.id, currentUser.id);
-    onReviewsChange(updatedReviews.filter((item) => item.albumId === review.albumId));
+  async function handleToggleLike() {
+    try {
+      const updatedReviews = await toggleLike(review.id, currentUser.id);
+      onReviewsChange(updatedReviews.filter((item) => String(item.albumId) === String(review.albumId)));
+    } catch {
+      // ignore
+    }
   }
 
   return <View style={styles.reviewItem}><View style={styles.reviewItemHeader}><Text style={styles.reviewerName}>{review.userId === currentUser.id ? currentUser.name : review.userId}</Text><Text style={styles.reviewRating}>{review.rating.toFixed(1)} ★</Text></View>{Boolean(review.reviewText) && <Text style={styles.reviewText}>{review.reviewText}</Text>}<View style={styles.reviewSocialRow}><Pressable onPress={handleToggleLike} style={styles.socialButton}><Text style={[styles.likeIcon, isLiked && styles.likeIconActive]}>♥</Text><Text style={[styles.socialCount, isLiked && styles.socialCountActive]}>{likedBy.length}</Text></Pressable><ReviewComments review={review} currentUser={currentUser} /></View></View>;
 }
 
 function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete }) {
-  const [albumReviews, setAlbumReviews] = useState(() => getReviewsByAlbum(album.id));
+  const [albumReviews, setAlbumReviews] = useState([]);
   const average = albumReviews.length > 0 ? albumReviews.reduce((total, review) => total + review.rating, 0) / albumReviews.length : 0;
 
   useEffect(() => {
-    setAlbumReviews(getReviewsByAlbum(album.id));
+    let mounted = true;
+
+    (async () => {
+      try {
+        const reviews = await getReviewsByAlbum(album.id);
+        if (mounted) setAlbumReviews(reviews);
+      } catch {
+        if (mounted) setAlbumReviews([]);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, [album.id]);
 
   return <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.details} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled"><Pressable onPress={onBack} style={styles.backButton}><Text style={styles.backButtonText}>← VOLTAR</Text></Pressable><AlbumCover album={album} large /><Text style={styles.detailsEyebrow}>DETALHE DO ALBUM</Text><View style={styles.detailsTitleRow}><View style={styles.detailsTitleWrap}><Text style={styles.detailsTitle}>{album.title}</Text><Text style={styles.detailsArtist}>{album.artist || 'Artista desconhecido'}</Text></View><View style={styles.detailAverage}><Text style={styles.detailAverageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.detailAverageStar}>★</Text></View></View>{Boolean(album.description) && <Text style={styles.detailsDescription}>{album.description}</Text>}<View style={styles.detailsActions}><Pressable onPress={onEdit} style={styles.editButton}><Text style={styles.editButtonText}>EDITAR</Text></Pressable><Pressable onPress={onDelete} style={styles.deleteButton}><Text style={styles.deleteButtonText}>EXCLUIR</Text></Pressable></View><ReviewSection albumId={album.id} currentUser={currentUser} reviews={albumReviews} onReviewsChange={setAlbumReviews} /></ScrollView>;
