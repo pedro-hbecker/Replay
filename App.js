@@ -55,6 +55,23 @@ function SearchResult({ album, onAdd }) {
   return <Pressable onPress={onAdd} style={({ pressed }) => [styles.searchResult, pressed && styles.pressed]}><AlbumCover album={album} /><View style={styles.searchResultInfo}><Text style={styles.searchResultTitle} numberOfLines={2}>{album.title}</Text><Text style={styles.searchResultArtist} numberOfLines={1}>{album.artist || 'Artista desconhecido'}</Text></View><View style={styles.addSmallButton}><Text style={styles.addSmallButtonText}>+</Text></View></Pressable>;
 }
 
+function TrendingCard({ album, onAdd }) {
+  return (
+    <Pressable onPress={() => onAdd(album)} style={({ pressed }) => [styles.trendingCard, pressed && styles.pressed]}>
+      {album.coverUrl ? (
+        <Image source={{ uri: album.coverUrl }} style={styles.trendingCover} />
+      ) : (
+        <View style={[styles.trendingCover, styles.coverPlaceholder]}>
+          <Text style={styles.coverPlaceholderText}>REPLAY</Text>
+        </View>
+      )}
+      <Text style={styles.trendingTitle} numberOfLines={2}>{album.title}</Text>
+      <Text style={styles.trendingArtist} numberOfLines={1}>{album.artist || 'Artista desconhecido'}</Text>
+      <View style={styles.trendingAddButton}><Text style={{ color: palette.background, fontWeight: '900' }}>+</Text></View>
+    </Pressable>
+  );
+}
+
 async function pickImageAsBase64(onPicked, onError) {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -340,9 +357,10 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
             data={trending}
             horizontal
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <SearchResult album={item} onAdd={() => handleAddFromTrending(item)} />}
+            renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item)} />}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 4 }}
+            ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
           />
         </View>
       )}
@@ -690,6 +708,11 @@ const styles = StyleSheet.create({
   topAlbums: { flexDirection: 'row', gap: 12 },
   topAlbumItem: { width: 104 },
   topAlbumTitle: { color: '#F5F5F5', fontSize: 11, fontWeight: '700', marginTop: 7 },
+  trendingCard: { width: 132, marginRight: 12 },
+  trendingCover: { width: 132, aspectRatio: 1, borderRadius: 8, backgroundColor: palette.title, resizeMode: 'cover' },
+  trendingTitle: { color: '#F5F5F5', fontSize: 12, fontWeight: '700', marginTop: 8 },
+  trendingArtist: { color: palette.text, fontSize: 11, marginTop: 4 },
+  trendingAddButton: { position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: 13, backgroundColor: palette.accent, alignItems: 'center', justifyContent: 'center' },
   profileForm: { paddingBottom: 30 },
   profilePhotoPicker: { width: 128, height: 128, alignSelf: 'center', borderWidth: 1, borderColor: palette.accent, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginBottom: 8, overflow: 'hidden', borderRadius: 64 },
   selectedProfilePhoto: { width: '100%', height: '100%' },
