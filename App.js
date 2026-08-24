@@ -21,7 +21,7 @@ import { getCommentsByReview, removeComment, saveComment } from './services/comm
 import { musicSearch } from './services/musicSearch';
 import { getTrendingAlbums } from './services/trendingAlbums';
 import { getReviewsByAlbum, saveReview, toggleLike, updateReview } from './services/reviewStorage';
-import { getCurrentUser, saveUser, updateUser } from './services/userStorage';
+import { getCurrentUser, saveUser, updateUser, toggleFavoriteAlbum } from './services/userStorage';
 
 const palette = {
   background: '#0A0A0A',
@@ -102,8 +102,7 @@ function ProfileForm({ initialUser = null, albums, onSaved }) {
   const [name, setName] = useState(initialUser?.name || '');
   const [photoUrl, setPhotoUrl] = useState(initialUser?.photoUrl || null);
   const [bio, setBio] = useState(initialUser?.bio || '');
-  const [artists, setArtists] = useState([...(initialUser?.topArtists || []), '', '', ''].slice(0, 3));
-  const [topAlbumIds, setTopAlbumIds] = useState(initialUser?.topAlbumIds || []);
+  const [topAlbumIds] = useState(initialUser?.topAlbumIds || []);
   const [errors, setErrors] = useState({});
 
   async function handlePickPhoto() {
@@ -112,7 +111,7 @@ function ProfileForm({ initialUser = null, albums, onSaved }) {
   }
 
   function toggleAlbum(albumId) {
-    setTopAlbumIds((currentIds) => currentIds.includes(albumId) ? currentIds.filter((id) => id !== albumId) : currentIds.length < 3 ? [...currentIds, albumId] : currentIds);
+    // album favorites are managed in AlbumDetails now
   }
 
   async function handleSubmit() {
@@ -127,8 +126,7 @@ function ProfileForm({ initialUser = null, albums, onSaved }) {
       name: name.trim(),
       photoUrl: photoUrl || '',
       bio: bio.trim(),
-      topArtists: artists.map((artist) => artist.trim()).filter(Boolean).slice(0, 3),
-      topAlbumIds: topAlbumIds.slice(0, 3),
+      topAlbumIds: initialUser?.topAlbumIds || [],
       followerIds: initialUser?.followerIds || [],
       followingIds: initialUser?.followingIds || [],
     };
@@ -146,7 +144,8 @@ function ProfileForm({ initialUser = null, albums, onSaved }) {
   }
 
   function updateArtist(index, value) {
-    setArtists((currentArtists) => currentArtists.map((artist, artistIndex) => artistIndex === index ? value : artist));
+    // removed artist inputs
+    return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" /><Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
   }
 
   return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" /><Text style={styles.fieldLabel}>TOP 3 ARTISTAS</Text>{artists.map((artist, index) => <TextInput key={index} value={artist} onChangeText={(value) => updateArtist(index, value)} placeholder={`Artista ${index + 1}`} placeholderTextColor={palette.text} style={styles.formInput} />)}<Text style={styles.fieldLabel}>TOP 3 ALBUNS</Text><Text style={styles.selectionHint}>Escolha ate 3 albuns do seu catalogo.</Text><View style={styles.albumSelection}>{albums.length === 0 ? <Text style={styles.searchHint}>Adicione albuns ao catalogo para seleciona-los.</Text> : albums.map((album) => { const isSelected = topAlbumIds.includes(album.id); return <Pressable key={album.id} onPress={() => toggleAlbum(album.id)} style={[styles.albumOption, isSelected && styles.albumOptionSelected]}><AlbumCover album={album} /><View style={styles.albumOptionInfo}><Text style={styles.albumOptionTitle} numberOfLines={2}>{album.title}</Text><Text style={styles.albumOptionArtist} numberOfLines={1}>{album.artist || 'Artista desconhecido'}</Text></View><Text style={styles.albumOptionMark}>{isSelected ? '✓' : '+'}</Text></Pressable>; })}</View>{Boolean(errors.submit) && <Text style={styles.submitError}>{errors.submit}</Text>}<Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
@@ -166,7 +165,7 @@ function ProfileScreen({ user, albums, onEdit }) {
     };
   }, [user.topAlbumIds]);
 
-  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><View style={styles.profileHeader}><UserAvatar user={user} large /><View style={styles.profileIdentity}><Text style={styles.profileName}>{user.name}</Text><Text style={styles.profileBio}>{user.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><View><Text style={styles.followNumber}>{user.followerIds.length}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></View><View><Text style={styles.followNumber}>{user.followingIds.length}</Text><Text style={styles.followLabel}>SEGUINDO</Text></View></View><Pressable onPress={onEdit} style={styles.profileEditButton}><Text style={styles.profileEditText}>EDITAR PERFIL</Text></Pressable><Text style={styles.profileSectionTitle}>Top 3 artistas</Text><View style={styles.artistList}>{user.topArtists.length === 0 ? <Text style={styles.profileSecondary}>Nenhum artista definido ainda.</Text> : user.topArtists.slice(0, 3).map((artist, index) => <View key={`${artist}-${index}`} style={styles.artistItem}><Text style={styles.artistIndex}>0{index + 1}</Text><Text style={styles.artistName}>{artist}</Text></View>)}</View><Text style={styles.profileSectionTitle}>Top 3 albuns</Text><View style={styles.topAlbums}>{topAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : topAlbums.map((album) => <View key={album.id} style={styles.topAlbumItem}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></View>)}</View></ScrollView>;
+  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><View style={styles.profileHeader}><UserAvatar user={user} large /><View style={styles.profileIdentity}><Text style={styles.profileName}>{user.name}</Text><Text style={styles.profileBio}>{user.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><View><Text style={styles.followNumber}>{user.followerIds.length}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></View><View><Text style={styles.followNumber}>{user.followingIds.length}</Text><Text style={styles.followLabel}>SEGUINDO</Text></View></View><Pressable onPress={onEdit} style={styles.profileEditButton}><Text style={styles.profileEditText}>EDITAR PERFIL</Text></Pressable><Text style={styles.profileSectionTitle}>Álbuns favoritos</Text><View style={styles.topAlbums}>{topAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : topAlbums.map((album) => <View key={album.id} style={styles.topAlbumItem}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></View>)}</View></ScrollView>;
 }
 
 function ProfileEditorModal({ visible, user, albums, onClose, onSaved }) {
@@ -532,9 +531,27 @@ function ReviewItem({ review, currentUser, onReviewsChange }) {
   return <View style={styles.reviewItem}><View style={styles.reviewItemHeader}><Text style={styles.reviewerName}>{review.userId === currentUser.id ? currentUser.name : review.userId}</Text><Text style={styles.reviewRating}>{review.rating.toFixed(1)} ★</Text></View>{Boolean(review.reviewText) && <Text style={styles.reviewText}>{review.reviewText}</Text>}<View style={styles.reviewSocialRow}><Pressable onPress={handleToggleLike} style={styles.socialButton}><Text style={[styles.likeIcon, isLiked && styles.likeIconActive]}>♥</Text><Text style={[styles.socialCount, isLiked && styles.socialCountActive]}>{likedBy.length}</Text></Pressable><ReviewComments review={review} currentUser={currentUser} /></View></View>;
 }
 
-function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete }) {
+function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete, onUserChange }) {
   const [albumReviews, setAlbumReviews] = useState([]);
   const average = albumReviews.length > 0 ? albumReviews.reduce((total, review) => total + review.rating, 0) / albumReviews.length : 0;
+
+  const isFavorite = Array.isArray(currentUser?.topAlbumIds) ? currentUser.topAlbumIds.includes(album.id) : false;
+
+  async function handleToggleFavorite() {
+    try {
+      const result = await toggleFavoriteAlbum(album.id);
+      if (result.limitReached) {
+        Alert.alert('Limite atingido', 'Voce ja tem 3 albuns favoritos. Remova um antes de adicionar outro.');
+        return;
+      }
+
+      if (typeof onUserChange === 'function') {
+        onUserChange(result.user);
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -553,7 +570,7 @@ function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete }) {
     };
   }, [album.id]);
 
-  return <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.details} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled"><Pressable onPress={onBack} style={styles.backButton}><Text style={styles.backButtonText}>← VOLTAR</Text></Pressable><AlbumCover album={album} large /><Text style={styles.detailsEyebrow}>DETALHE DO ALBUM</Text><View style={styles.detailsTitleRow}><View style={styles.detailsTitleWrap}><Text style={styles.detailsTitle}>{album.title}</Text><Text style={styles.detailsArtist}>{album.artist || 'Artista desconhecido'}</Text></View><View style={styles.detailAverage}><Text style={styles.detailAverageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.detailAverageStar}>★</Text></View></View>{Boolean(album.description) && <Text style={styles.detailsDescription}>{album.description}</Text>}<View style={styles.detailsActions}><Pressable onPress={onEdit} style={styles.editButton}><Text style={styles.editButtonText}>EDITAR</Text></Pressable><Pressable onPress={onDelete} style={styles.deleteButton}><Text style={styles.deleteButtonText}>EXCLUIR</Text></Pressable></View><ReviewSection albumId={album.id} currentUser={currentUser} reviews={albumReviews} onReviewsChange={setAlbumReviews} /></ScrollView>;
+  return <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.details} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled"><Pressable onPress={onBack} style={styles.backButton}><Text style={styles.backButtonText}>← VOLTAR</Text></Pressable><AlbumCover album={album} large /><Text style={styles.detailsEyebrow}>DETALHE DO ALBUM</Text><View style={styles.detailsTitleRow}><View style={styles.detailsTitleWrap}><Text style={styles.detailsTitle}>{album.title}</Text><Text style={styles.detailsArtist}>{album.artist || 'Artista desconhecido'}</Text></View><View style={styles.detailAverage}><Text style={styles.detailAverageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.detailAverageStar}>★</Text></View></View>{Boolean(album.description) && <Text style={styles.detailsDescription}>{album.description}</Text>}<View style={styles.detailsActions}><Pressable onPress={onEdit} style={styles.editButton}><Text style={styles.editButtonText}>EDITAR</Text></Pressable><Pressable onPress={handleToggleFavorite} style={[styles.editButton, isFavorite && styles.editButtonActive]}><Text style={[styles.editButtonText, isFavorite && styles.detailAverageStar]}>{isFavorite ? '♥ FAVORITO' : '♥ FAVORITAR'}</Text></Pressable><Pressable onPress={onDelete} style={styles.deleteButton}><Text style={styles.deleteButtonText}>EXCLUIR</Text></Pressable></View><ReviewSection albumId={album.id} currentUser={currentUser} reviews={albumReviews} onReviewsChange={setAlbumReviews} /></ScrollView>;
 }
 
 export default function App() {
@@ -611,7 +628,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
-      <View style={styles.content}>{selectedAlbum ? <AlbumDetails album={selectedAlbum} currentUser={currentUser} onBack={() => setSelectedAlbum(null)} onEdit={() => setIsEditModalVisible(true)} onDelete={handleAlbumDelete} /> : activeTab === 'explore' ? <ExploreScreen albums={albums} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'profile' ? <ProfileScreen user={currentUser} albums={albums} onEdit={() => setIsEditModalVisible(true)} /> : <View />}</View>
+      <View style={styles.content}>{selectedAlbum ? <AlbumDetails album={selectedAlbum} currentUser={currentUser} onBack={() => setSelectedAlbum(null)} onEdit={() => setIsEditModalVisible(true)} onDelete={handleAlbumDelete} onUserChange={setCurrentUser} /> : activeTab === 'explore' ? <ExploreScreen albums={albums} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'profile' ? <ProfileScreen user={currentUser} albums={albums} onEdit={() => setIsEditModalVisible(true)} /> : <View />}</View>
       {selectedAlbum && <AddAlbumModal key={selectedAlbum.id} visible={isEditModalVisible} initialAlbum={selectedAlbum} onClose={() => setIsEditModalVisible(false)} onSaved={handleAlbumUpdated} />}
       {!selectedAlbum && <ProfileEditorModal visible={isEditModalVisible} user={currentUser} albums={albums} onClose={() => setIsEditModalVisible(false)} onSaved={setCurrentUser} />}
       <View style={styles.navBar}>
@@ -747,6 +764,7 @@ const styles = StyleSheet.create({
   detailsPlaceholder: { color: palette.text, fontSize: 14, lineHeight: 21, marginTop: 32, maxWidth: 300 },
   detailsActions: { flexDirection: 'row', gap: 10, marginTop: 28, marginBottom: 24 },
   editButton: { borderWidth: 1, borderColor: palette.accent, paddingHorizontal: 22, paddingVertical: 13 },
+  editButtonActive: { backgroundColor: palette.accent },
   editButtonText: { color: palette.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   deleteButton: { borderWidth: 1, borderColor: '#FF6B6B', paddingHorizontal: 22, paddingVertical: 13 },
   deleteButtonText: { color: '#FF6B6B', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },

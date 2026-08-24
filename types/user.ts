@@ -3,7 +3,6 @@ export interface User {
   name: string;
   photoUrl: string;
   bio: string;
-  topArtists: string[];
   topAlbumIds: string[];
   followerIds: string[];
   followingIds: string[];
