@@ -22,7 +22,7 @@ import { musicSearch } from './services/musicSearch';
 import { getTrendingAlbums } from './services/trendingAlbums';
 import { getReviewsByAlbum, saveReview, toggleLike, updateReview } from './services/reviewStorage';
 import { getCurrentUser, saveUser, updateUser, toggleFavoriteAlbum } from './services/userStorage';
-
+ProfileForm
 const palette = {
   background: '#0A0A0A',
   title: '#2D3640',
@@ -97,21 +97,16 @@ function UserAvatar({ user, large = false }) {
   return <View style={[styles.userAvatar, styles.avatarPlaceholder, large && styles.largeUserAvatar]}><Text style={[styles.avatarInitial, large && styles.largeAvatarInitial]}>{user.name?.charAt(0)?.toUpperCase() || 'R'}</Text></View>;
 }
 
-function ProfileForm({ initialUser = null, albums, onSaved }) {
+function ProfileForm({ initialUser = null, onSaved }) {
   const isFirstAccess = !initialUser;
   const [name, setName] = useState(initialUser?.name || '');
   const [photoUrl, setPhotoUrl] = useState(initialUser?.photoUrl || null);
   const [bio, setBio] = useState(initialUser?.bio || '');
-  const [topAlbumIds] = useState(initialUser?.topAlbumIds || []);
   const [errors, setErrors] = useState({});
 
   async function handlePickPhoto() {
     const picked = await pickImageAsBase64(setPhotoUrl, (message) => setErrors((currentErrors) => ({ ...currentErrors, photo: message })));
     if (picked) setErrors((currentErrors) => ({ ...currentErrors, photo: '' }));
-  }
-
-  function toggleAlbum(albumId) {
-    // album favorites are managed in AlbumDetails now
   }
 
   async function handleSubmit() {
@@ -143,29 +138,7 @@ function ProfileForm({ initialUser = null, albums, onSaved }) {
     }
   }
 
-  function updateArtist(index, value) {
-    // removed artist inputs
-    return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" /><Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
-  }
-
-  return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" /><Text style={styles.fieldLabel}>TOP 3 ARTISTAS</Text>{artists.map((artist, index) => <TextInput key={index} value={artist} onChangeText={(value) => updateArtist(index, value)} placeholder={`Artista ${index + 1}`} placeholderTextColor={palette.text} style={styles.formInput} />)}<Text style={styles.fieldLabel}>TOP 3 ALBUNS</Text><Text style={styles.selectionHint}>Escolha ate 3 albuns do seu catalogo.</Text><View style={styles.albumSelection}>{albums.length === 0 ? <Text style={styles.searchHint}>Adicione albuns ao catalogo para seleciona-los.</Text> : albums.map((album) => { const isSelected = topAlbumIds.includes(album.id); return <Pressable key={album.id} onPress={() => toggleAlbum(album.id)} style={[styles.albumOption, isSelected && styles.albumOptionSelected]}><AlbumCover album={album} /><View style={styles.albumOptionInfo}><Text style={styles.albumOptionTitle} numberOfLines={2}>{album.title}</Text><Text style={styles.albumOptionArtist} numberOfLines={1}>{album.artist || 'Artista desconhecido'}</Text></View><Text style={styles.albumOptionMark}>{isSelected ? '✓' : '+'}</Text></Pressable>; })}</View>{Boolean(errors.submit) && <Text style={styles.submitError}>{errors.submit}</Text>}<Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
-}
-
-function ProfileScreen({ user, albums, onEdit }) {
-  const [topAlbums, setTopAlbums] = useState([]);
-
-  useEffect(() => {
-    let mounted = true;
-    Promise.all(user.topAlbumIds.map((albumId) => getAlbumById(albumId))).then((albumResults) => {
-      if (mounted) setTopAlbums(albumResults.filter(Boolean));
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [user.topAlbumIds]);
-
-  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><View style={styles.profileHeader}><UserAvatar user={user} large /><View style={styles.profileIdentity}><Text style={styles.profileName}>{user.name}</Text><Text style={styles.profileBio}>{user.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><View><Text style={styles.followNumber}>{user.followerIds.length}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></View><View><Text style={styles.followNumber}>{user.followingIds.length}</Text><Text style={styles.followLabel}>SEGUINDO</Text></View></View><Pressable onPress={onEdit} style={styles.profileEditButton}><Text style={styles.profileEditText}>EDITAR PERFIL</Text></Pressable><Text style={styles.profileSectionTitle}>Álbuns favoritos</Text><View style={styles.topAlbums}>{topAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : topAlbums.map((album) => <View key={album.id} style={styles.topAlbumItem}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></View>)}</View></ScrollView>;
+  return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" />{Boolean(errors.submit) && <Text style={styles.submitError}>{errors.submit}</Text>}<Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
 }
 
 function ProfileEditorModal({ visible, user, albums, onClose, onSaved }) {
