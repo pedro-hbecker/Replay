@@ -20,9 +20,8 @@ import { getAlbumById, getAlbums, removeAlbum, saveAlbum, updateAlbum } from './
 import { getCommentsByReview, removeComment, saveComment } from './services/commentStorage';
 import { musicSearch } from './services/musicSearch';
 import { getTrendingAlbums } from './services/trendingAlbums';
-import { getRecentlyReviewedAlbumIds, getReviewsByAlbum, saveReview, toggleLike, updateReview } from './services/reviewStorage';
-import { getCurrentUser, saveUser, updateUser, toggleFavoriteAlbum } from './services/userStorage';
-ProfileForm
+import { getReviewsByAlbum, getReviewsByUser, saveReview, toggleLike, updateReview } from './services/reviewStorage';
+import { authenticateUser, clearCurrentUser, getCurrentUser, getUserById, saveUser, updateUser, toggleFavoriteAlbum } from './services/userStorage';
 const palette = {
   background: '#0A0A0A',
   title: '#2D3640',
@@ -55,9 +54,9 @@ function SearchResult({ album, onAdd }) {
   return <Pressable onPress={onAdd} style={({ pressed }) => [styles.searchResult, pressed && styles.pressed]}><AlbumCover album={album} /><View style={styles.searchResultInfo}><Text style={styles.searchResultTitle} numberOfLines={2}>{album.title}</Text><Text style={styles.searchResultArtist} numberOfLines={1}>{album.artist || 'Artista desconhecido'}</Text></View><View style={styles.addSmallButton}><Text style={styles.addSmallButtonText}>+</Text></View></Pressable>;
 }
 
-function TrendingCard({ album, onAdd }) {
+function TrendingCard({ album, onSelect }) {
   return (
-    <Pressable onPress={() => onAdd(album)} style={({ pressed }) => [styles.trendingCard, pressed && styles.pressed]}>
+    <Pressable onPress={() => onSelect(album)} style={({ pressed }) => [styles.trendingCard, pressed && styles.pressed]}>
       {album.coverUrl ? (
         <Image source={{ uri: album.coverUrl }} style={styles.trendingCover} />
       ) : (
@@ -89,17 +88,19 @@ async function pickImageAsBase64(onPicked, onError) {
   return true;
 }
 
-function UserAvatar({ user, large = false }) {
+function UserAvatar({ user, large = false, small = false }) {
   if (user.photoUrl) {
-    return <Image source={{ uri: user.photoUrl }} style={[styles.userAvatar, large && styles.largeUserAvatar]} />;
+    return <Image source={{ uri: user.photoUrl }} style={[styles.userAvatar, large && styles.largeUserAvatar, small && styles.smallUserAvatar]} />;
   }
 
-  return <View style={[styles.userAvatar, styles.avatarPlaceholder, large && styles.largeUserAvatar]}><Text style={[styles.avatarInitial, large && styles.largeAvatarInitial]}>{user.name?.charAt(0)?.toUpperCase() || 'R'}</Text></View>;
+  return <View style={[styles.userAvatar, styles.avatarPlaceholder, large && styles.largeUserAvatar, small && styles.smallUserAvatar]}><Text style={[styles.avatarInitial, large && styles.largeAvatarInitial, small && styles.smallAvatarInitial]}>{user.name?.charAt(0)?.toUpperCase() || 'R'}</Text></View>;
 }
 
 function ProfileForm({ initialUser = null, onSaved }) {
   const isFirstAccess = !initialUser;
   const [name, setName] = useState(initialUser?.name || '');
+  const [email, setEmail] = useState(initialUser?.email || '');
+  const [password, setPassword] = useState(initialUser?.password || '');
   const [photoUrl, setPhotoUrl] = useState(initialUser?.photoUrl || null);
   const [bio, setBio] = useState(initialUser?.bio || '');
   const [errors, setErrors] = useState({});
@@ -112,6 +113,8 @@ function ProfileForm({ initialUser = null, onSaved }) {
   async function handleSubmit() {
     const nextErrors = {};
     if (!name.trim()) nextErrors.name = 'Informe seu nome.';
+    if (isFirstAccess && !email.trim()) nextErrors.email = 'Informe seu email.';
+    if (isFirstAccess && password.length < 6) nextErrors.password = 'A senha deve ter pelo menos 6 caracteres.';
     if (isFirstAccess && !photoUrl) nextErrors.photo = 'Escolha uma foto de perfil.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -119,6 +122,8 @@ function ProfileForm({ initialUser = null, onSaved }) {
     const user = {
       id: initialUser?.id || globalThis.crypto?.randomUUID?.() || `user-${Date.now()}`,
       name: name.trim(),
+      email: initialUser?.email || email.trim().toLowerCase(),
+      password: initialUser?.password || password,
       photoUrl: photoUrl || '',
       bio: bio.trim(),
       topAlbumIds: initialUser?.topAlbumIds || [],
@@ -138,10 +143,10 @@ function ProfileForm({ initialUser = null, onSaved }) {
     }
   }
 
-  return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" />{Boolean(errors.submit) && <Text style={styles.submitError}>{errors.submit}</Text>}<Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
+  return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}{isFirstAccess && <><Text style={styles.fieldLabel}>EMAIL *</Text><TextInput value={email} onChangeText={setEmail} placeholder="seu@email.com" placeholderTextColor={palette.text} keyboardType="email-address" autoCapitalize="none" style={[styles.formInput, errors.email && styles.inputError]} />{Boolean(errors.email) && <Text style={styles.fieldError}>{errors.email}</Text>}<Text style={styles.fieldLabel}>SENHA *</Text><TextInput value={password} onChangeText={setPassword} placeholder="Minimo de 6 caracteres" placeholderTextColor={palette.text} secureTextEntry style={[styles.formInput, errors.password && styles.inputError]} />{Boolean(errors.password) && <Text style={styles.fieldError}>{errors.password}</Text>}</>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" />{Boolean(errors.submit) && <Text style={styles.submitError}>{errors.submit}</Text>}<Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
 }
 
-function ProfileScreen({ user, albums, onEdit }) {
+function ProfileScreen({ user, albums, onEdit, onLogout }) {
   const [topAlbums, setTopAlbums] = useState([]);
 
   useEffect(() => {
@@ -155,7 +160,7 @@ function ProfileScreen({ user, albums, onEdit }) {
     };
   }, [user.topAlbumIds]);
 
-  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><View style={styles.profileHeader}><UserAvatar user={user} large /><View style={styles.profileIdentity}><Text style={styles.profileName}>{user.name}</Text><Text style={styles.profileBio}>{user.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><View><Text style={styles.followNumber}>{user.followerIds.length}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></View><View><Text style={styles.followNumber}>{user.followingIds.length}</Text><Text style={styles.followLabel}>SEGUINDO</Text></View></View><Pressable onPress={onEdit} style={styles.profileEditButton}><Text style={styles.profileEditText}>EDITAR PERFIL</Text></Pressable><Text style={styles.profileSectionTitle}>Álbuns favoritos</Text><View style={styles.topAlbums}>{topAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : topAlbums.map((album) => <View key={album.id} style={styles.topAlbumItem}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></View>)}</View></ScrollView>;
+  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><View style={styles.profileHeader}><UserAvatar user={user} large /><View style={styles.profileIdentity}><Text style={styles.profileName}>{user.name}</Text><Text style={styles.profileBio}>{user.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><View><Text style={styles.followNumber}>{user.followerIds.length}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></View><View><Text style={styles.followNumber}>{user.followingIds.length}</Text><Text style={styles.followLabel}>SEGUINDO</Text></View></View><View style={styles.profileActions}><Pressable onPress={onEdit} style={styles.profileEditButton}><Text style={styles.profileEditText}>EDITAR PERFIL</Text></Pressable><Pressable onPress={onLogout} style={styles.logoutButton}><Text style={styles.logoutButtonText}>SAIR DA CONTA</Text></Pressable></View><Text style={styles.profileSectionTitle}>Álbuns favoritos</Text><View style={styles.topAlbums}>{topAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : topAlbums.map((album) => <View key={album.id} style={styles.topAlbumItem}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></View>)}</View></ScrollView>;
 }
 
 function ProfileEditorModal({ visible, user, albums, onClose, onSaved }) {
@@ -163,7 +168,22 @@ function ProfileEditorModal({ visible, user, albums, onClose, onSaved }) {
 }
 
 function FirstAccessScreen({ albums, onSaved }) {
-  return <SafeAreaView style={styles.container}><StatusBar style="light" /><View style={styles.onboarding}><Text style={styles.eyebrow}>BEM-VINDO AO REPLAY</Text><Text style={styles.onboardingTitle}>Crie seu perfil{`\n`}para comecar.</Text><Text style={styles.onboardingCopy}>Escolha seu nome e uma foto. Voce podera completar seu perfil depois.</Text><ProfileForm albums={albums} onSaved={onSaved} /></View></SafeAreaView>;
+  const [isLogin, setIsLogin] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  async function handleLogin() {
+    const user = await authenticateUser(email, password);
+    if (!user) {
+      setError('Email ou senha incorretos.');
+      return;
+    }
+    setError('');
+    onSaved(user);
+  }
+
+  return <SafeAreaView style={styles.container}><StatusBar style="light" /><View style={styles.onboarding}><Text style={styles.eyebrow}>BEM-VINDO AO REPLAY</Text><Text style={styles.onboardingTitle}>{isLogin ? 'Entre na sua conta.' : <>Crie seu perfil{`\n`}para comecar.</>}</Text><Text style={styles.onboardingCopy}>{isLogin ? 'Acesse seus albuns e avaliacoes.' : 'Escolha seu nome e uma foto. Voce podera completar seu perfil depois.'}</Text>{isLogin ? <View style={styles.profileForm}><Text style={styles.fieldLabel}>EMAIL *</Text><TextInput value={email} onChangeText={setEmail} placeholder="seu@email.com" placeholderTextColor={palette.text} keyboardType="email-address" autoCapitalize="none" style={styles.formInput} /><Text style={styles.fieldLabel}>SENHA *</Text><TextInput value={password} onChangeText={setPassword} placeholder="Sua senha" placeholderTextColor={palette.text} secureTextEntry style={styles.formInput} />{Boolean(error) && <Text style={styles.submitError}>{error}</Text>}<Pressable onPress={handleLogin} style={styles.createButton}><Text style={styles.createButtonText}>ENTRAR</Text></Pressable></View> : <ProfileForm albums={albums} onSaved={onSaved} />}<Pressable onPress={() => { setIsLogin((current) => !current); setError(''); }} style={styles.authToggle}><Text style={styles.authToggleText}>{isLogin ? 'AINDA NAO TENHO UMA CONTA' : 'JA TENHO UMA CONTA'}</Text></Pressable></View></SafeAreaView>;
 }
 
 function CreateAlbumForm({ initialAlbum, onSaved }) {
@@ -291,7 +311,10 @@ function AddAlbumModal({ visible, onClose, onSaved, initialAlbum = null }) {
 function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [trending, setTrending] = useState([]);
+  const [moreAlbums, setMoreAlbums] = useState([]);
   const [loadingTrending, setLoadingTrending] = useState(false);
+  const [loadingMoreAlbums, setLoadingMoreAlbums] = useState(false);
+  const [nextTrendingLimit, setNextTrendingLimit] = useState(25);
   const { width } = useWindowDimensions();
   const columnCount = width >= 700 ? 4 : width >= 440 ? 3 : 2;
   const cardWidth = (width - 40 - (columnCount - 1) * 14) / columnCount;
@@ -315,7 +338,7 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
     };
   }, []);
 
-  async function handleAddFromTrending(result) {
+async function handleTrendingSelect(result) {
     const album = { ...result, addedBy: 'apple', addedAt: new Date().toISOString() };
     try {
       await saveAlbum(album);
@@ -323,6 +346,25 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
       setTrending((current) => current.filter((item) => item.id !== result.id));
     } catch {
       // ignore
+    } finally {
+      onAlbumPress(album);
+    }
+  }
+
+  async function loadMoreAlbums() {
+    if (loadingMoreAlbums) return;
+
+    setLoadingMoreAlbums(true);
+    try {
+      const results = await getTrendingAlbums('br', nextTrendingLimit);
+      const existingIds = new Set([...albums, ...moreAlbums].map((album) => album.id));
+      const newAlbums = results.filter((album) => !existingIds.has(album.id));
+      if (newAlbums.length > 0) setMoreAlbums((current) => [...current, ...newAlbums]);
+      setNextTrendingLimit((current) => current + 25);
+    } catch {
+      // ignore and allow another attempt on the next scroll
+    } finally {
+      setLoadingMoreAlbums(false);
     }
   }
 
@@ -346,7 +388,7 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
             data={trending}
             horizontal
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item)} />}
+            renderItem={({ item }) => <TrendingCard album={item} onSelect={handleTrendingSelect} />}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 4 }}
             ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
@@ -366,12 +408,15 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
       ) : (
         <FlatList
           key={columnCount}
-          data={albums}
+          data={[...albums, ...moreAlbums]}
           numColumns={columnCount}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <AlbumCard album={item} cardWidth={cardWidth} onPress={() => onAlbumPress(item)} />}
           columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.gridContent}
+          onEndReached={loadMoreAlbums}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={loadingMoreAlbums ? <ActivityIndicator color={palette.accent} style={styles.loader} /> : null}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -388,7 +433,60 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
   );
 }
 
-function HomeScreen({ onAlbumPress, onAlbumAdded }) {
+function ActivityScreen({ currentUser, onAlbumPress }) {
+  const [reviewedAlbums, setReviewedAlbums] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const reviews = await getReviewsByUser(currentUser.id);
+        const sorted = [...reviews].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const items = await Promise.all(sorted.map(async (review) => ({ review, album: await getAlbumById(review.albumId) })));
+        if (mounted) setReviewedAlbums(items.filter((item) => item.album));
+      } catch {
+        if (mounted) setReviewedAlbums([]);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUser.id]);
+
+  return (
+    <View style={styles.explore}>
+      <Text style={styles.eyebrow}>DIARIO</Text>
+      <Text style={styles.pageTitle}>Atividade</Text>
+      {reviewedAlbums.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyMark}>03</Text>
+          <Text style={styles.emptyTitle}>Nenhuma avaliacao{`\n`}ainda.</Text>
+          <Text style={styles.emptyCopy}>Avalie um album para ele aparecer aqui.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={reviewedAlbums}
+          keyExtractor={({ review }) => review.id}
+          renderItem={({ item }) => (
+            <Pressable onPress={() => onAlbumPress(item.album)} style={({ pressed }) => [styles.searchResult, pressed && styles.pressed]}>
+              <View style={styles.activityAlbumCover}><AlbumCover album={item.album} /></View>
+              <View style={styles.searchResultInfo}>
+                <Text style={styles.searchResultTitle}>{item.album.title}</Text>
+                <Text style={styles.searchResultArtist}>{item.album.artist || 'Artista desconhecido'}</Text>
+              </View>
+              <Text style={styles.reviewRating}>{item.review.rating.toFixed(1)} ★</Text>
+            </Pressable>
+          )}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </View>
+  );
+}
+
+function HomeScreen({ currentUser, onAlbumPress, onAlbumAdded }) {
   const [popularAlbums, setPopularAlbums] = useState([]);
   const [recentAlbums, setRecentAlbums] = useState([]);
   const [genreGroups, setGenreGroups] = useState([]);
@@ -405,15 +503,16 @@ function HomeScreen({ onAlbumPress, onAlbumAdded }) {
     let mounted = true;
     (async () => {
       try {
-        const albumIds = await getRecentlyReviewedAlbumIds(10);
-        const albums = await Promise.all(albumIds.map((albumId) => getAlbumById(albumId)));
-        if (mounted) setRecentAlbums(albums.filter(Boolean));
+        const reviews = await getReviewsByUser(currentUser.id);
+        const sorted = [...reviews].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const items = await Promise.all(sorted.slice(0, 10).map(async (review) => getAlbumById(review.albumId)));
+        if (mounted) setRecentAlbums(items.filter(Boolean));
       } catch {
         // keep the section hidden when the request fails
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [currentUser.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -432,7 +531,7 @@ function HomeScreen({ onAlbumPress, onAlbumAdded }) {
     return () => { mounted = false; };
   }, []);
 
-  async function handleAddFromTrending(result, removeFromList) {
+  async function handleTrendingSelect(result, removeFromList) {
     const album = { ...result, addedBy: 'apple', addedAt: new Date().toISOString() };
     try {
       await saveAlbum(album);
@@ -440,6 +539,8 @@ function HomeScreen({ onAlbumPress, onAlbumAdded }) {
       removeFromList(result.id);
     } catch {
       // ignore
+    } finally {
+      onAlbumPress(album);
     }
   }
 
@@ -449,7 +550,7 @@ function HomeScreen({ onAlbumPress, onAlbumAdded }) {
       <Text style={styles.pageTitle}>Início</Text>
       {popularAlbums.length > 0 && <View style={styles.homeSection}>
         <Text style={styles.homeSectionTitle}>POPULARES</Text>
-        <FlatList data={popularAlbums} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item, (albumId) => setPopularAlbums((current) => current.filter((album) => album.id !== albumId)))} />} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList} />
+        <FlatList data={popularAlbums} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onSelect={() => handleTrendingSelect(item, (albumId) => setPopularAlbums((current) => current.filter((album) => album.id !== albumId)))} />} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList} />
       </View>}
       {recentAlbums.length > 0 && <View style={styles.homeSection}>
         <Text style={styles.homeSectionTitle}>ATIVIDADE RECENTE</Text>
@@ -457,7 +558,7 @@ function HomeScreen({ onAlbumPress, onAlbumAdded }) {
       </View>}
       {genreGroups.map(({ genre, albums }) => <View key={genre} style={styles.homeSection}>
         <Text style={styles.homeSectionTitle}>{genre.toUpperCase()}</Text>
-        <FlatList data={albums} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item, (albumId) => setGenreGroups((current) => current.map((group) => ({ ...group, albums: group.albums.filter((album) => album.id !== albumId) })).filter((group) => group.albums.length >= 3)))} />} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList} />
+        <FlatList data={albums} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onSelect={() => handleTrendingSelect(item, (albumId) => setGenreGroups((current) => current.map((group) => ({ ...group, albums: group.albums.filter((album) => album.id !== albumId) })).filter((group) => group.albums.length >= 3)))} />} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList} />
       </View>)}
     </ScrollView>
   );
@@ -467,6 +568,7 @@ function HomeScreen({ onAlbumPress, onAlbumAdded }) {
 function ReviewComments({ review, currentUser }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [comments, setComments] = useState([]);
+  const [commentUsers, setCommentUsers] = useState({});
   const [commentText, setCommentText] = useState('');
   const [commentCount, setCommentCount] = useState(0);
 
@@ -493,6 +595,22 @@ function ReviewComments({ review, currentUser }) {
     };
   }, [isExpanded, review.id]);
 
+  useEffect(() => {
+    let mounted = true;
+    const userIds = [...new Set(comments.map((comment) => comment.userId))];
+    Promise.all(userIds.map(async (userId) => [userId, await getUserById(userId)]))
+      .then((entries) => {
+        if (mounted) setCommentUsers(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        if (mounted) setCommentUsers({});
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [comments]);
+
   async function handleAddComment() {
     const text = commentText.trim();
     if (!text) return;
@@ -501,6 +619,8 @@ function ReviewComments({ review, currentUser }) {
       id: globalThis.crypto?.randomUUID?.() || `comment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       reviewId: review.id,
       userId: currentUser.id,
+      authorName: currentUser.name,
+      authorPhotoUrl: currentUser.photoUrl,
       text,
       createdAt: new Date().toISOString(),
     };
@@ -536,7 +656,7 @@ function ReviewComments({ review, currentUser }) {
     ]);
   }
 
-  return <View style={styles.commentThread}><Pressable onPress={() => setIsExpanded((expanded) => !expanded)} style={styles.commentToggle}><Text style={styles.commentToggleText}>▢ {commentCount} comentarios</Text><Text style={styles.commentToggleArrow}>{isExpanded ? '−' : '+'}</Text></Pressable>{isExpanded && <View style={styles.commentContent}>{comments.map((comment) => <View key={comment.id} style={styles.commentItem}><View style={styles.commentHeader}><Text style={styles.commentAuthor}>{comment.userId === currentUser.id ? currentUser.name : comment.userId}</Text>{comment.userId === currentUser.id && <Pressable onPress={() => handleRemoveComment(comment)}><Text style={styles.commentDelete}>EXCLUIR</Text></Pressable>}</View><Text style={styles.commentBody}>{comment.text}</Text></View>)}<View style={styles.commentInputRow}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Escreva um comentario" placeholderTextColor={palette.text} style={styles.commentInput} multiline /><Pressable onPress={handleAddComment} style={styles.commentSendButton}><Text style={styles.commentSendText}>ENVIAR</Text></Pressable></View></View>}</View>;
+  return <View style={styles.commentThread}><Pressable onPress={() => setIsExpanded((expanded) => !expanded)} style={styles.commentToggle}><Text style={styles.commentToggleText}>▢ {commentCount} comentarios</Text><Text style={styles.commentToggleArrow}>{isExpanded ? '−' : '+'}</Text></Pressable>{isExpanded && <View style={styles.commentContent}>{comments.map((comment) => { const commentUser = comment.userId === currentUser.id ? currentUser : commentUsers[comment.userId]; const author = commentUser || (comment.authorName ? { name: comment.authorName, photoUrl: comment.authorPhotoUrl } : null); return <View key={comment.id} style={styles.commentItem}><View style={styles.commentHeader}><View style={styles.commentAuthorInfo}>{author && <UserAvatar user={author} small />}<Text style={styles.commentAuthor}>{author?.name || comment.userId}</Text></View>{comment.userId === currentUser.id && <Pressable onPress={() => handleRemoveComment(comment)}><Text style={styles.commentDelete}>EXCLUIR</Text></Pressable>}</View><Text style={styles.commentBody}>{comment.text}</Text></View>; })}<View style={styles.commentInputRow}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Escreva um comentario" placeholderTextColor={palette.text} style={styles.commentInput} multiline /><Pressable onPress={handleAddComment} style={styles.commentSendButton}><Text style={styles.commentSendText}>ENVIAR</Text></Pressable></View></View>}</View>;
 }
 
 function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
@@ -687,6 +807,21 @@ export default function App() {
     ]);
   }
 
+  function handleLogout() {
+    Alert.alert('Sair da conta', 'Tem certeza que deseja sair?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Sair',
+        style: 'destructive',
+        onPress: async () => {
+          await clearCurrentUser();
+          setSelectedAlbum(null);
+          setCurrentUser(null);
+        },
+      },
+    ]);
+  }
+
   if (!currentUser) {
     return <FirstAccessScreen albums={albums} onSaved={setCurrentUser} />;
   }
@@ -694,7 +829,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
-      <View style={styles.content}>{selectedAlbum ? <AlbumDetails album={selectedAlbum} currentUser={currentUser} onBack={() => setSelectedAlbum(null)} onEdit={() => setIsEditModalVisible(true)} onDelete={handleAlbumDelete} onUserChange={setCurrentUser} /> : activeTab === 'home' ? <HomeScreen onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'explore' ? <ExploreScreen albums={albums} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'profile' ? <ProfileScreen user={currentUser} albums={albums} onEdit={() => setIsEditModalVisible(true)} /> : <View />}</View>
+      <View style={styles.content}>{selectedAlbum ? <AlbumDetails album={selectedAlbum} currentUser={currentUser} onBack={() => setSelectedAlbum(null)} onEdit={() => setIsEditModalVisible(true)} onDelete={handleAlbumDelete} onUserChange={setCurrentUser} /> : activeTab === 'home' ? <HomeScreen currentUser={currentUser} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'explore' ? <ExploreScreen albums={albums} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'profile' ? <ProfileScreen user={currentUser} albums={albums} onEdit={() => setIsEditModalVisible(true)} onLogout={handleLogout} /> : activeTab === 'activity' ? <ActivityScreen currentUser={currentUser} onAlbumPress={setSelectedAlbum} /> : <View />}</View>
       {selectedAlbum && <AddAlbumModal key={selectedAlbum.id} visible={isEditModalVisible} initialAlbum={selectedAlbum} onClose={() => setIsEditModalVisible(false)} onSaved={handleAlbumUpdated} />}
       {!selectedAlbum && <ProfileEditorModal visible={isEditModalVisible} user={currentUser} albums={albums} onClose={() => setIsEditModalVisible(false)} onSaved={setCurrentUser} />}
       <View style={styles.navBar}>
@@ -771,6 +906,9 @@ const styles = StyleSheet.create({
   fieldError: { color: '#FF6B6B', fontSize: 11, marginTop: 5 },
   createButton: { backgroundColor: palette.accent, alignItems: 'center', paddingVertical: 14, marginTop: 22 },
   createButtonText: { color: palette.background, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  authToggle: { alignSelf: 'center', paddingVertical: 16 },
+  authToggleText: { color: palette.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, textAlign: 'center' },
+  submitError: { color: '#FF6B6B', fontSize: 11, marginTop: 10 },
   onboarding: { flex: 1, paddingHorizontal: 24, paddingTop: 44 },
   onboardingTitle: { color: '#F5F5F5', fontSize: 38, lineHeight: 40, fontWeight: '800', marginBottom: 14 },
   onboardingCopy: { color: palette.text, fontSize: 15, lineHeight: 22, marginBottom: 20, maxWidth: 320 },
@@ -778,17 +916,22 @@ const styles = StyleSheet.create({
   profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
   profileIdentity: { flex: 1, marginLeft: 18 },
   userAvatar: { width: 72, height: 72, backgroundColor: palette.surface },
+  smallUserAvatar: { width: 28, height: 28, borderRadius: 14 },
   largeUserAvatar: { width: 104, height: 104, borderRadius: 52 },
   avatarPlaceholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: palette.accent, borderRadius: 36 },
   avatarInitial: { color: palette.accent, fontSize: 25, fontWeight: '800' },
+  smallAvatarInitial: { fontSize: 12 },
   largeAvatarInitial: { fontSize: 38 },
   profileName: { color: '#F5F5F5', fontSize: 28, fontWeight: '800', marginBottom: 7 },
   profileBio: { color: palette.text, fontSize: 13, lineHeight: 19 },
   followStats: { flexDirection: 'row', gap: 42, borderTopWidth: 1, borderBottomWidth: 1, borderColor: palette.border, paddingVertical: 15, marginBottom: 16 },
   followNumber: { color: '#F5F5F5', fontSize: 21, fontWeight: '700' },
   followLabel: { color: palette.text, fontSize: 8, letterSpacing: 1, marginTop: 4 },
-  profileEditButton: { alignSelf: 'flex-start', borderWidth: 1, borderColor: palette.accent, paddingHorizontal: 15, paddingVertical: 11, marginBottom: 32 },
   profileEditText: { color: palette.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  profileActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 32 },
+  profileEditButton: { alignSelf: 'flex-start', borderWidth: 1, borderColor: palette.accent, paddingHorizontal: 15, paddingVertical: 11 },
+  logoutButton: { alignSelf: 'flex-start', borderWidth: 1, borderColor: '#FF6B6B', paddingHorizontal: 15, paddingVertical: 11 },
+  logoutButtonText: { color: '#FF6B6B', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   profileSectionTitle: { color: '#F5F5F5', fontSize: 18, fontWeight: '700', marginBottom: 14 },
   artistList: { marginBottom: 30 },
   artistItem: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderColor: palette.border, paddingVertical: 12 },
@@ -803,6 +946,7 @@ const styles = StyleSheet.create({
   trendingTitle: { color: '#F5F5F5', fontSize: 12, fontWeight: '700', marginTop: 8 },
   trendingArtist: { color: palette.text, fontSize: 11, marginTop: 4 },
   trendingAddButton: { position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: 13, backgroundColor: palette.accent, alignItems: 'center', justifyContent: 'center' },
+  activityAlbumCover: { width: 72, height: 72, flexShrink: 0 },
   profileForm: { paddingBottom: 30 },
   profilePhotoPicker: { width: 128, height: 128, alignSelf: 'center', borderWidth: 1, borderColor: palette.accent, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginBottom: 8, overflow: 'hidden', borderRadius: 64 },
   selectedProfilePhoto: { width: '100%', height: '100%' },
@@ -873,6 +1017,7 @@ const styles = StyleSheet.create({
   commentContent: { marginTop: 10, backgroundColor: palette.surface, padding: 10, borderRadius: 8 },
   commentItem: { paddingBottom: 10, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: palette.border },
   commentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  commentAuthorInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   commentAuthor: { color: '#F5F5F5', fontSize: 11, fontWeight: '700' },
   commentDelete: { color: '#FF6B6B', fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
   commentBody: { color: palette.text, fontSize: 12, lineHeight: 18 },
