@@ -29,6 +29,15 @@ export async function getReviews(): Promise<Review[]> {
   }
 }
 
+export async function getRecentlyReviewedAlbumIds(limit = 10): Promise<string[]> {
+  const reviews = await getReviews();
+  const sortedReviews = [...reviews].sort(
+    (firstReview, secondReview) => new Date(secondReview.createdAt).getTime() - new Date(firstReview.createdAt).getTime(),
+  );
+  const albumIds = [...new Set(sortedReviews.map((review) => review.albumId))];
+  return albumIds.slice(0, limit);
+}
+
 export async function getReviewsByAlbum(albumId: string): Promise<Review[]> {
   const normalizedAlbumId = String(albumId);
   return (await getReviews()).filter((review) => review.albumId === normalizedAlbumId);
