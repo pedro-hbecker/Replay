@@ -315,140 +315,6 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
     };
   }, []);
 
-  function HomeScreen({ onAlbumPress, onAlbumAdded }) {
-    const [popularAlbums, setPopularAlbums] = useState([]);
-    const [recentAlbums, setRecentAlbums] = useState([]);
-    const [genreGroups, setGenreGroups] = useState([]);
-
-    useEffect(() => {
-      let mounted = true;
-
-      (async () => {
-        try {
-          const results = await getTrendingAlbums();
-          if (mounted && Array.isArray(results) && results.length > 0) setPopularAlbums(results);
-        } catch {
-          // keep the section hidden when the request fails
-        }
-      })();
-
-      return () => {
-        mounted = false;
-      };
-    }, []);
-
-    useEffect(() => {
-      let mounted = true;
-
-      (async () => {
-        try {
-          const albumIds = await getRecentlyReviewedAlbumIds(10);
-          const albums = await Promise.all(albumIds.map((albumId) => getAlbumById(albumId)));
-          if (mounted) setRecentAlbums(albums.filter(Boolean));
-        } catch {
-          // keep the section hidden when the request fails
-        }
-      })();
-
-      return () => {
-        mounted = false;
-      };
-    }, []);
-
-    useEffect(() => {
-      let mounted = true;
-
-      (async () => {
-        try {
-          const results = await getTrendingAlbums('br', 100);
-          const groupedAlbums = results.reduce((groups, album) => {
-            const genre = album.genres?.[0];
-            if (!genre) return groups;
-            const group = groups.get(genre) || [];
-            group.push(album);
-            groups.set(genre, group);
-            return groups;
-          }, new Map());
-          const groups = [...groupedAlbums.entries()]
-            .filter(([, albums]) => albums.length >= 3)
-            .map(([genre, albums]) => ({ genre, albums }));
-          if (mounted) setGenreGroups(groups);
-        } catch {
-          // keep the section hidden when the request fails
-        }
-      })();
-
-      return () => {
-        mounted = false;
-      };
-    }, []);
-
-    async function handleAddFromTrending(result, removeFromList) {
-      const album = { ...result, addedBy: 'apple', addedAt: new Date().toISOString() };
-      try {
-        await saveAlbum(album);
-        onAlbumAdded(album);
-        removeFromList(result.id);
-      } catch {
-        // ignore
-      }
-    }
-
-    return (
-      <ScrollView style={styles.home} contentContainerStyle={styles.homeContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.eyebrow}>REPLAY</Text>
-        <Text style={styles.pageTitle}>Início</Text>
-
-        {popularAlbums.length > 0 && (
-          <View style={styles.homeSection}>
-            <Text style={styles.homeSectionTitle}>POPULARES</Text>
-            <FlatList
-              data={popularAlbums}
-              horizontal
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item, (albumId) => setPopularAlbums((currentAlbums) => currentAlbums.filter((album) => album.id !== albumId)))} />}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            />
-          </View>
-        )}
-
-        {recentAlbums.length > 0 && (
-          <View style={styles.homeSection}>
-            <Text style={styles.homeSectionTitle}>ATIVIDADE RECENTE</Text>
-            <FlatList
-              data={recentAlbums}
-              horizontal
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <Pressable onPress={() => onAlbumPress(item)} style={({ pressed }) => [styles.recentAlbumCard, pressed && styles.pressed]}>
-                  <AlbumCover album={item} />
-                  <Text style={styles.recentAlbumTitle} numberOfLines={2}>{item.title}</Text>
-                </Pressable>
-              )}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            />
-          </View>
-        )}
-
-        {genreGroups.map(({ genre, albums }) => (
-          <View key={genre} style={styles.homeSection}>
-            <Text style={styles.homeSectionTitle}>{genre.toUpperCase()}</Text>
-            <FlatList
-              data={albums}
-              horizontal
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item, (albumId) => setGenreGroups((currentGroups) => currentGroups.map((group) => ({ ...group, albums: group.albums.filter((album) => album.id !== albumId) })).filter((group) => group.albums.length >= 3)))} />}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            />
-          </View>
-        ))}
-      </ScrollView>
-    );
-  }
-
   async function handleAddFromTrending(result) {
     const album = { ...result, addedBy: 'apple', addedAt: new Date().toISOString() };
     try {
@@ -521,6 +387,82 @@ function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
     </View>
   );
 }
+
+function HomeScreen({ onAlbumPress, onAlbumAdded }) {
+  const [popularAlbums, setPopularAlbums] = useState([]);
+  const [recentAlbums, setRecentAlbums] = useState([]);
+  const [genreGroups, setGenreGroups] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    getTrendingAlbums().then((results) => {
+      if (mounted && Array.isArray(results) && results.length > 0) setPopularAlbums(results);
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const albumIds = await getRecentlyReviewedAlbumIds(10);
+        const albums = await Promise.all(albumIds.map((albumId) => getAlbumById(albumId)));
+        if (mounted) setRecentAlbums(albums.filter(Boolean));
+      } catch {
+        // keep the section hidden when the request fails
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    getTrendingAlbums('br', 100).then((results) => {
+      const groupedAlbums = results.reduce((groups, album) => {
+        const genre = album.genres?.[0];
+        if (!genre) return groups;
+        groups.set(genre, [...(groups.get(genre) || []), album]);
+        return groups;
+      }, new Map());
+      const groups = [...groupedAlbums.entries()]
+        .filter(([, albums]) => albums.length >= 3)
+        .map(([genre, albums]) => ({ genre, albums }));
+      if (mounted) setGenreGroups(groups);
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
+  async function handleAddFromTrending(result, removeFromList) {
+    const album = { ...result, addedBy: 'apple', addedAt: new Date().toISOString() };
+    try {
+      await saveAlbum(album);
+      onAlbumAdded(album);
+      removeFromList(result.id);
+    } catch {
+      // ignore
+    }
+  }
+
+  return (
+    <ScrollView style={styles.home} contentContainerStyle={styles.homeContent} showsVerticalScrollIndicator={false}>
+      <Text style={styles.eyebrow}>REPLAY</Text>
+      <Text style={styles.pageTitle}>Início</Text>
+      {popularAlbums.length > 0 && <View style={styles.homeSection}>
+        <Text style={styles.homeSectionTitle}>POPULARES</Text>
+        <FlatList data={popularAlbums} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item, (albumId) => setPopularAlbums((current) => current.filter((album) => album.id !== albumId)))} />} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList} />
+      </View>}
+      {recentAlbums.length > 0 && <View style={styles.homeSection}>
+        <Text style={styles.homeSectionTitle}>ATIVIDADE RECENTE</Text>
+        <FlatList data={recentAlbums} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <Pressable onPress={() => onAlbumPress(item)} style={({ pressed }) => [styles.recentAlbumCard, pressed && styles.pressed]}><AlbumCover album={item} /><Text style={styles.recentAlbumTitle} numberOfLines={2}>{item.title}</Text></Pressable>} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList} />
+      </View>}
+      {genreGroups.map(({ genre, albums }) => <View key={genre} style={styles.homeSection}>
+        <Text style={styles.homeSectionTitle}>{genre.toUpperCase()}</Text>
+        <FlatList data={albums} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onAdd={() => handleAddFromTrending(item, (albumId) => setGenreGroups((current) => current.map((group) => ({ ...group, albums: group.albums.filter((album) => album.id !== albumId) })).filter((group) => group.albums.length >= 3)))} />} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList} />
+      </View>)}
+    </ScrollView>
+  );
+}
+
 
 function ReviewComments({ review, currentUser }) {
   const [isExpanded, setIsExpanded] = useState(false);
