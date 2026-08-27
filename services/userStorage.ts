@@ -158,10 +158,13 @@ export async function toggleFavoriteAlbum(albumId: string): Promise<{ user: User
     return { user: null, limitReached: false };
   }
 
-  const currentTop = Array.isArray(currentUser.topAlbumIds) ? currentUser.topAlbumIds : [];
+  const currentTop = Array.isArray(currentUser.topAlbumIds)
+    ? [...new Set(currentUser.topAlbumIds.map((id) => String(id)))]
+    : [];
+  const normalizedAlbumId = String(albumId);
 
-  if (currentTop.includes(albumId)) {
-    const updated = { ...currentUser, topAlbumIds: currentTop.filter((id) => id !== albumId) };
+  if (currentTop.includes(normalizedAlbumId)) {
+    const updated = { ...currentUser, topAlbumIds: currentTop.filter((id) => id !== normalizedAlbumId) };
     const saved = await saveUser(updated);
     return { user: saved, limitReached: false };
   }
@@ -170,7 +173,7 @@ export async function toggleFavoriteAlbum(albumId: string): Promise<{ user: User
     return { user: currentUser, limitReached: true };
   }
 
-  const updated = { ...currentUser, topAlbumIds: [...currentTop, albumId] };
+  const updated = { ...currentUser, topAlbumIds: [...currentTop, normalizedAlbumId] };
   const saved = await saveUser(updated);
   return { user: saved, limitReached: false };
 }

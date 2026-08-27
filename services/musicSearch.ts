@@ -13,6 +13,7 @@ type MusicBrainzArtistCredit = {
 
 type MusicBrainzReleaseGroup = {
   id: string;
+  score?: number;
   title?: string;
   'first-release-date'?: string;
   'artist-credit'?: MusicBrainzArtistCredit[];
@@ -23,6 +24,8 @@ type MusicBrainzReleaseGroup = {
 type MusicBrainzResponse = {
   'release-groups'?: MusicBrainzReleaseGroup[];
 };
+
+const searchCache = new Map<string, AlbumSearchResult[]>();
 
 function getArtistName(artistCredits: MusicBrainzArtistCredit[] = []): string {
   return artistCredits
@@ -52,16 +55,20 @@ async function getCoverUrl(releaseGroupId: string): Promise<string | null> {
   }
 }
 
-export async function musicSearch(term: string): Promise<AlbumSearchResult[]> {
+export async function musicSearch(term: string, limit = 25): Promise<AlbumSearchResult[]> {
   const normalizedTerm = term.trim();
 
   if (!normalizedTerm) {
     return [];
   }
 
+  const cacheKey = `${normalizedTerm.toLowerCase()}-${limit}`;
+  const cachedResults = searchCache.get(cacheKey);
+  if (cachedResults) return cachedResults;
+
   const query = encodeURIComponent(normalizedTerm);
   const response = await fetch(
-    `${MUSICBRAINZ_URL}?query=${query}&fmt=json&limit=25`,
+    `${MUSICBRAINZ_URL}?query=${query}&fmt=json&limit=${limit}`,
     {
       headers: {
         Accept: 'application/json',
@@ -75,12 +82,12 @@ export async function musicSearch(term: string): Promise<AlbumSearchResult[]> {
   }
 
   const data = (await response.json()) as MusicBrainzResponse;
-  const releaseGroups = data['release-groups'] ?? [];
+  const releaseGroups = (data['release-groups'] ?? []).sort((first, second) => (second.score ?? 0) - (first.score ?? 0));
   const coverUrls = await Promise.all(
     releaseGroups.map((releaseGroup) => getCoverUrl(releaseGroup.id)),
   );
 
-  return releaseGroups.map((releaseGroup, index) => ({
+  const results = releaseGroups.map((releaseGroup, index) => ({
     id: releaseGroup.id,
     title: releaseGroup.title ?? '',
     artist: getArtistName(releaseGroup['artist-credit']),
@@ -88,6 +95,8 @@ export async function musicSearch(term: string): Promise<AlbumSearchResult[]> {
     releaseDate: releaseGroup['first-release-date'] ?? '',
     genres: getGenres(releaseGroup),
   }));
+  searchCache.set(cacheKey, results);
+  return results;
 }
 
 export const searchAlbums = musicSearch;

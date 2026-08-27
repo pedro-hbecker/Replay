@@ -356,6 +356,9 @@ function ExploreScreen({ albums, currentUser, onAlbumPress, onAlbumAdded }) {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [trending, setTrending] = useState([]);
   const [moreAlbums, setMoreAlbums] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const [loadingTrending, setLoadingTrending] = useState(false);
   const [loadingMoreAlbums, setLoadingMoreAlbums] = useState(false);
   const [nextTrendingLimit, setNextTrendingLimit] = useState(25);
@@ -381,6 +384,33 @@ function ExploreScreen({ albums, currentUser, onAlbumPress, onAlbumAdded }) {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    const normalizedTerm = searchTerm.trim();
+    if (normalizedTerm.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timeoutId = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await musicSearch(normalizedTerm, 10);
+        if (!cancelled) setSearchResults(results);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 600);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [searchTerm]);
 
 async function handleTrendingSelect(result) {
     const album = { ...result, addedBy: 'apple', addedAt: new Date().toISOString() };
@@ -429,7 +459,7 @@ async function handleTrendingSelect(result) {
             <Text style={styles.addButtonPlus}>+</Text>
             <Text style={styles.addButtonText}>ADICIONAR ALBUM</Text>
           </Pressable>}
-        </View>{trending.length > 0 && <View style={styles.exploreTrending}>
+        </View><View style={styles.exploreSearch}><TextInput value={searchTerm} onChangeText={setSearchTerm} placeholder="Buscar album ou artista" placeholderTextColor={palette.text} style={styles.searchInput} returnKeyType="search" />{searching && <ActivityIndicator color={palette.accent} style={styles.exploreSearchLoader} />}{!searching && searchResults.length > 0 && <View style={styles.exploreSearchResults}>{searchResults.map((item) => <Pressable key={item.id} onPress={() => onAlbumPress(item)} style={({ pressed }) => [styles.searchResult, pressed && styles.pressed]}><AlbumCover album={item} /><View style={styles.searchResultInfo}><Text style={styles.searchResultTitle} numberOfLines={2}>{item.title}</Text><Text style={styles.searchResultArtist} numberOfLines={1}>{item.artist || 'Artista desconhecido'}</Text></View></Pressable>)}</View>}</View>{trending.length > 0 && <View style={styles.exploreTrending}>
           <Text style={[styles.eyebrow, { marginLeft: 2 }]}>EM ALTA</Text>
           <FlatList data={trending} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onSelect={handleTrendingSelect} />} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4 }} ItemSeparatorComponent={() => <View style={{ width: 12 }} />} />
         </View>}</>}
@@ -780,7 +810,7 @@ function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete, onUserChan
   const [albumReviews, setAlbumReviews] = useState([]);
   const average = albumReviews.length > 0 ? albumReviews.reduce((total, review) => total + review.rating, 0) / albumReviews.length : 0;
 
-  const isFavorite = Array.isArray(currentUser?.topAlbumIds) ? currentUser.topAlbumIds.includes(album.id) : false;
+  const isFavorite = Array.isArray(currentUser?.topAlbumIds) ? currentUser.topAlbumIds.some((id) => String(id) === String(album.id)) : false;
 
   async function handleToggleFavorite() {
     try {
@@ -921,6 +951,9 @@ const styles = StyleSheet.create({
   recentAlbumTitle: { color: '#F5F5F5', fontSize: 12, fontWeight: '700', marginTop: 8 },
   explore: { flex: 1, paddingHorizontal: 20, paddingTop: 24 },
   exploreHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 },
+  exploreSearch: { position: 'relative', marginBottom: 18 },
+  exploreSearchLoader: { position: 'absolute', right: 12, top: 13 },
+  exploreSearchResults: { marginTop: 8, borderWidth: 1, borderColor: palette.border, backgroundColor: palette.surface },
   exploreTrending: { flexShrink: 0, marginBottom: 18 },
   eyebrow: { color: palette.accent, fontSize: 9, fontWeight: '700', letterSpacing: 1.6, marginBottom: 8 },
   pageTitle: { color: palette.title, fontSize: 36, fontWeight: '800' },
