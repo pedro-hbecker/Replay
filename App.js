@@ -20,8 +20,8 @@ import { getAlbumById, getAlbums, removeAlbum, saveAlbum, updateAlbum } from './
 import { getCommentsByReview, removeComment, saveComment } from './services/commentStorage';
 import { musicSearch } from './services/musicSearch';
 import { getTrendingAlbums } from './services/trendingAlbums';
-import { getReviewsByAlbum, getReviewsByUser, saveReview, toggleLike, updateReview } from './services/reviewStorage';
-import { authenticateUser, clearCurrentUser, getCurrentUser, getUserById, saveUser, updateUser, toggleFavoriteAlbum } from './services/userStorage';
+import { getReviewsByAlbum, getReviewsByUser, removeReview, saveReview, toggleLike, updateReview } from './services/reviewStorage';
+import { authenticateUser, clearCurrentUser, getCurrentUser, getUserById, saveUser, toggleFollowUser, updateUser, toggleFavoriteAlbum } from './services/userStorage';
 const palette = {
   background: '#0A0A0A',
   title: '#2D3640',
@@ -96,6 +96,10 @@ function UserAvatar({ user, large = false, small = false }) {
   return <View style={[styles.userAvatar, styles.avatarPlaceholder, large && styles.largeUserAvatar, small && styles.smallUserAvatar]}><Text style={[styles.avatarInitial, large && styles.largeAvatarInitial, small && styles.smallAvatarInitial]}>{user.name?.charAt(0)?.toUpperCase() || 'R'}</Text></View>;
 }
 
+function VerifiedBadge({ name }) {
+  return name === 'pedroooooo' ? <Image source={require('./assets/verificado.png')} style={styles.verifiedBadge} resizeMode="contain" /> : null;
+}
+
 function ProfileForm({ initialUser = null, onSaved }) {
   const isFirstAccess = !initialUser;
   const [name, setName] = useState(initialUser?.name || '');
@@ -146,8 +150,23 @@ function ProfileForm({ initialUser = null, onSaved }) {
   return <ScrollView contentContainerStyle={styles.profileForm} keyboardShouldPersistTaps="handled"><Pressable onPress={handlePickPhoto} style={[styles.profilePhotoPicker, errors.photo && styles.inputError]}>{photoUrl ? <Image source={{ uri: photoUrl }} style={styles.selectedProfilePhoto} /> : <><Text style={styles.coverPickerPlus}>+</Text><Text style={styles.coverPickerText}>ESCOLHER FOTO</Text></>}</Pressable>{Boolean(errors.photo) && <Text style={styles.fieldError}>{errors.photo}</Text>}<Text style={styles.fieldLabel}>NOME *</Text><TextInput value={name} onChangeText={(value) => { setName(value); if (value.trim()) setErrors((currentErrors) => ({ ...currentErrors, name: '' })); }} placeholder="Seu nome" placeholderTextColor={palette.text} style={[styles.formInput, errors.name && styles.inputError]} />{Boolean(errors.name) && <Text style={styles.fieldError}>{errors.name}</Text>}{isFirstAccess && <><Text style={styles.fieldLabel}>EMAIL *</Text><TextInput value={email} onChangeText={setEmail} placeholder="seu@email.com" placeholderTextColor={palette.text} keyboardType="email-address" autoCapitalize="none" style={[styles.formInput, errors.email && styles.inputError]} />{Boolean(errors.email) && <Text style={styles.fieldError}>{errors.email}</Text>}<Text style={styles.fieldLabel}>SENHA *</Text><TextInput value={password} onChangeText={setPassword} placeholder="Minimo de 6 caracteres" placeholderTextColor={palette.text} secureTextEntry style={[styles.formInput, errors.password && styles.inputError]} />{Boolean(errors.password) && <Text style={styles.fieldError}>{errors.password}</Text>}</>}<Text style={styles.fieldLabel}>BIOGRAFIA</Text><TextInput value={bio} onChangeText={setBio} placeholder="Fale um pouco sobre voce" placeholderTextColor={palette.text} style={[styles.formInput, styles.descriptionInput]} multiline textAlignVertical="top" />{Boolean(errors.submit) && <Text style={styles.submitError}>{errors.submit}</Text>}<Pressable onPress={handleSubmit} style={styles.createButton}><Text style={styles.createButtonText}>{isFirstAccess ? 'CRIAR PERFIL' : 'SALVAR PERFIL'}</Text></Pressable></ScrollView>;
 }
 
-function ProfileScreen({ user, albums, onEdit, onLogout }) {
+function UserRelationList({ title, userIds }) {
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all((userIds || []).map((userId) => getUserById(userId))).then((results) => {
+      if (mounted) setUsers(results.filter(Boolean));
+    });
+    return () => { mounted = false; };
+  }, [userIds]);
+
+  return <View style={styles.relationList}><Text style={styles.profileSectionTitle}>{title}</Text>{users.length === 0 ? <Text style={styles.profileSecondary}>Nenhum usuario.</Text> : users.map((relationUser) => <View key={relationUser.id} style={styles.relationItem}><UserAvatar user={relationUser} small /><Text style={styles.relationName}>{relationUser.name}</Text><VerifiedBadge name={relationUser.name} /></View>)}</View>;
+}
+
+function ProfileScreen({ user, albums, onEdit, onLogout, onAlbumPress }) {
   const [topAlbums, setTopAlbums] = useState([]);
+  const [activeRelation, setActiveRelation] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -160,7 +179,31 @@ function ProfileScreen({ user, albums, onEdit, onLogout }) {
     };
   }, [user.topAlbumIds]);
 
-  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><View style={styles.profileHeader}><UserAvatar user={user} large /><View style={styles.profileIdentity}><Text style={styles.profileName}>{user.name}</Text><Text style={styles.profileBio}>{user.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><View><Text style={styles.followNumber}>{user.followerIds.length}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></View><View><Text style={styles.followNumber}>{user.followingIds.length}</Text><Text style={styles.followLabel}>SEGUINDO</Text></View></View><View style={styles.profileActions}><Pressable onPress={onEdit} style={styles.profileEditButton}><Text style={styles.profileEditText}>EDITAR PERFIL</Text></Pressable><Pressable onPress={onLogout} style={styles.logoutButton}><Text style={styles.logoutButtonText}>SAIR DA CONTA</Text></Pressable></View><Text style={styles.profileSectionTitle}>Álbuns favoritos</Text><View style={styles.topAlbums}>{topAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : topAlbums.map((album) => <View key={album.id} style={styles.topAlbumItem}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></View>)}</View></ScrollView>;
+  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><View style={styles.profileHeader}><UserAvatar user={user} large /><View style={styles.profileIdentity}><View style={styles.profileNameRow}><Text style={styles.profileName}>{user.name}</Text><VerifiedBadge name={user.name} /></View><Text style={styles.profileBio}>{user.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><Pressable onPress={() => setActiveRelation(activeRelation === 'followers' ? null : 'followers')}><Text style={styles.followNumber}>{user.followerIds.length}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></Pressable><Pressable onPress={() => setActiveRelation(activeRelation === 'following' ? null : 'following')}><Text style={styles.followNumber}>{user.followingIds.length}</Text><Text style={styles.followLabel}>SEGUINDO</Text></Pressable></View>{activeRelation === 'followers' && <UserRelationList title="Seguidores" userIds={user.followerIds} />}{activeRelation === 'following' && <UserRelationList title="Seguindo" userIds={user.followingIds} />}<View style={styles.profileActions}><Pressable onPress={onEdit} style={styles.profileEditButton}><Text style={styles.profileEditText}>EDITAR PERFIL</Text></Pressable><Pressable onPress={onLogout} style={styles.logoutButton}><Text style={styles.logoutButtonText}>SAIR DA CONTA</Text></Pressable></View><Text style={styles.profileSectionTitle}>Álbuns favoritos</Text><View style={styles.topAlbums}>{topAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : topAlbums.map((album) => <Pressable key={album.id} onPress={() => onAlbumPress(album)} style={({ pressed }) => [styles.topAlbumItem, pressed && styles.pressed]}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></Pressable>)}</View></ScrollView>;
+}
+
+function PublicProfileScreen({ user, currentUser, onBack, onUserChange, onAlbumPress }) {
+  const [favoriteAlbums, setFavoriteAlbums] = useState([]);
+  const [profileUser, setProfileUser] = useState(user);
+  const [isFollowing, setIsFollowing] = useState((currentUser.followingIds || []).some((id) => String(id) === String(user.id)));
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all((profileUser.topAlbumIds || []).map((albumId) => getAlbumById(albumId))).then((albums) => {
+      if (mounted) setFavoriteAlbums(albums.filter(Boolean));
+    });
+    return () => { mounted = false; };
+  }, [profileUser.topAlbumIds]);
+
+  async function handleToggleFollow() {
+    const result = await toggleFollowUser(user.id);
+    if (!result.user || String(result.user.id) !== String(currentUser.id)) return;
+    setIsFollowing(result.following);
+    if (result.targetUser) setProfileUser(result.targetUser);
+    onUserChange(result.user);
+  }
+
+  return <ScrollView contentContainerStyle={styles.profile} showsVerticalScrollIndicator={false}><Pressable onPress={onBack} style={styles.backButton}><Text style={styles.backButtonText}>← VOLTAR</Text></Pressable><View style={styles.profileHeader}><UserAvatar user={profileUser} large /><View style={styles.profileIdentity}><View style={styles.profileNameRow}><Text style={styles.profileName}>{profileUser.name}</Text><VerifiedBadge name={profileUser.name} /></View><Text style={styles.profileBio}>{profileUser.bio || 'Ainda nao adicionou uma biografia.'}</Text></View></View><View style={styles.followStats}><View><Text style={styles.followNumber}>{profileUser.followerIds?.length || 0}</Text><Text style={styles.followLabel}>SEGUIDORES</Text></View><View><Text style={styles.followNumber}>{profileUser.followingIds?.length || 0}</Text><Text style={styles.followLabel}>SEGUINDO</Text></View></View>{String(profileUser.id) !== String(currentUser.id) && <Pressable onPress={handleToggleFollow} style={[styles.followButton, isFollowing && styles.followButtonActive]}><Text style={[styles.followButtonText, isFollowing && styles.followButtonTextActive]}>{isFollowing ? 'SEGUINDO' : 'SEGUIR'}</Text></Pressable>}<Text style={styles.profileSectionTitle}>Álbuns favoritos</Text><View style={styles.topAlbums}>{favoriteAlbums.length === 0 ? <Text style={styles.profileSecondary}>Nenhum album definido ainda.</Text> : favoriteAlbums.map((album) => <Pressable key={album.id} onPress={() => onAlbumPress(album)} style={({ pressed }) => [styles.topAlbumItem, pressed && styles.pressed]}><AlbumCover album={album} /><Text style={styles.topAlbumTitle} numberOfLines={2}>{album.title}</Text></Pressable>)}</View></ScrollView>;
 }
 
 function ProfileEditorModal({ visible, user, albums, onClose, onSaved }) {
@@ -308,7 +351,8 @@ function AddAlbumModal({ visible, onClose, onSaved, initialAlbum = null }) {
   return <Modal visible={visible} animationType="slide" onRequestClose={onClose} transparent><View style={styles.modalBackdrop}><View style={styles.modalContent}><View style={styles.modalHeader}><Text style={styles.modalTitle}>{initialAlbum ? 'Editar album' : 'Adicionar album'}</Text><Pressable onPress={onClose}><Text style={styles.closeButton}>FECHAR</Text></Pressable></View>{initialAlbum ? <CreateAlbumForm initialAlbum={initialAlbum} onSaved={(album) => { onSaved(album); onClose(); }} /> : <><View style={styles.modeTabs}><Pressable onPress={() => setMode('search')} style={[styles.modeTab, mode === 'search' && styles.modeTabActive]}><Text style={[styles.modeTabText, mode === 'search' && styles.modeTabTextActive]}>BUSCAR</Text></Pressable><Pressable onPress={() => setMode('create')} style={[styles.modeTab, mode === 'create' && styles.modeTabActive]}><Text style={[styles.modeTabText, mode === 'create' && styles.modeTabTextActive]}>CRIAR ALBUM</Text></Pressable></View>{mode === 'create' ? <CreateAlbumForm onSaved={(album) => { onSaved(album); onClose(); }} /> : <><View style={styles.searchRow}><TextInput autoFocus value={term} onChangeText={setTerm} placeholder="Buscar por album ou artista" placeholderTextColor={palette.text} style={styles.searchInput} returnKeyType="search"/><View style={styles.searchButton}><Text style={styles.searchButtonText}>BUSCA AUTOMATICA</Text></View></View>{isSearching && <ActivityIndicator color={palette.accent} style={styles.loader} />}{Boolean(error) && <Text style={styles.errorText}>{error}</Text>}{!isSearching && results.length === 0 && <Text style={styles.searchHint}>{term ? 'Nenhum resultado encontrado.' : 'Pesquise um album para adicionar ao Replay.'}</Text>}<FlatList data={results} keyExtractor={(item) => item.id} renderItem={({ item }) => <SearchResult album={item} onAdd={() => handleAdd(item)} />} keyboardShouldPersistTaps="handled" /></>}</>}</View></View></Modal>;
 }
 
-function ExploreScreen({ albums, onAlbumPress, onAlbumAdded }) {
+function ExploreScreen({ albums, currentUser, onAlbumPress, onAlbumAdded }) {
+  const isAdmin = currentUser?.name === 'pedroooooo';
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [trending, setTrending] = useState([]);
   const [moreAlbums, setMoreAlbums] = useState([]);
@@ -352,7 +396,7 @@ async function handleTrendingSelect(result) {
   }
 
   async function loadMoreAlbums() {
-    if (loadingMoreAlbums) return;
+    if (loadingMoreAlbums || albums.length === 0) return;
 
     setLoadingMoreAlbums(true);
     try {
@@ -370,56 +414,40 @@ async function handleTrendingSelect(result) {
 
   return (
     <View style={styles.explore}>
-      <View style={styles.exploreHeader}>
-        <View>
-          <Text style={styles.eyebrow}>BIBLIOTECA</Text>
-          <Text style={styles.pageTitle}>Explorar</Text>
-        </View>
-        <Pressable onPress={() => setIsModalVisible(true)} style={styles.addButton}>
-          <Text style={styles.addButtonPlus}>+</Text>
-          <Text style={styles.addButtonText}>ADICIONAR ALBUM</Text>
-        </Pressable>
-      </View>
-
-      {trending.length > 0 && (
-        <View style={{ marginBottom: 18 }}>
+      <FlatList
+        key={columnCount}
+        data={albums.length === 0 ? [] : [...albums, ...moreAlbums]}
+        numColumns={columnCount}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <AlbumCard album={item} cardWidth={cardWidth} onPress={() => onAlbumPress(item)} />}
+        ListHeaderComponent={<><View style={styles.exploreHeader}>
+          <View>
+            <Text style={styles.eyebrow}>BIBLIOTECA</Text>
+            <Text style={styles.pageTitle}>Explorar</Text>
+          </View>
+          {isAdmin && <Pressable onPress={() => setIsModalVisible(true)} style={styles.addButton}>
+            <Text style={styles.addButtonPlus}>+</Text>
+            <Text style={styles.addButtonText}>ADICIONAR ALBUM</Text>
+          </Pressable>}
+        </View>{trending.length > 0 && <View style={styles.exploreTrending}>
           <Text style={[styles.eyebrow, { marginLeft: 2 }]}>EM ALTA</Text>
-          <FlatList
-            data={trending}
-            horizontal
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <TrendingCard album={item} onSelect={handleTrendingSelect} />}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 4 }}
-            ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
-          />
-        </View>
-      )}
-
-      {albums.length === 0 ? (
-        <View style={styles.emptyState}>
+          <FlatList data={trending} horizontal keyExtractor={(item) => item.id} renderItem={({ item }) => <TrendingCard album={item} onSelect={handleTrendingSelect} />} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4 }} ItemSeparatorComponent={() => <View style={{ width: 12 }} />} />
+        </View>}</>}
+        ListEmptyComponent={albums.length === 0 ? <View style={styles.emptyState}>
           <Text style={styles.emptyMark}>02</Text>
           <Text style={styles.emptyTitle}>Sua biblioteca{`\n`}comeca aqui.</Text>
           <Text style={styles.emptyCopy}>Adicione o primeiro album para montar sua colecao no Replay.</Text>
-          <Pressable onPress={() => setIsModalVisible(true)} style={styles.emptyButton}>
+          {isAdmin && <Pressable onPress={() => setIsModalVisible(true)} style={styles.emptyButton}>
             <Text style={styles.emptyButtonText}>ADICIONAR PRIMEIRO ALBUM</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <FlatList
-          key={columnCount}
-          data={[...albums, ...moreAlbums]}
-          numColumns={columnCount}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <AlbumCard album={item} cardWidth={cardWidth} onPress={() => onAlbumPress(item)} />}
-          columnWrapperStyle={styles.gridRow}
-          contentContainerStyle={styles.gridContent}
-          onEndReached={loadMoreAlbums}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={loadingMoreAlbums ? <ActivityIndicator color={palette.accent} style={styles.loader} /> : null}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+          </Pressable>}
+        </View> : null}
+        columnWrapperStyle={styles.gridRow}
+        contentContainerStyle={styles.gridContent}
+        onEndReached={loadMoreAlbums}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={loadingMoreAlbums ? <ActivityIndicator color={palette.accent} style={styles.loader} /> : null}
+        showsVerticalScrollIndicator={false}
+      />
 
       <AddAlbumModal
         visible={isModalVisible}
@@ -565,7 +593,7 @@ function HomeScreen({ currentUser, onAlbumPress, onAlbumAdded }) {
 }
 
 
-function ReviewComments({ review, currentUser }) {
+function ReviewComments({ review, currentUser, onUserPress }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [comments, setComments] = useState([]);
   const [commentUsers, setCommentUsers] = useState({});
@@ -656,10 +684,10 @@ function ReviewComments({ review, currentUser }) {
     ]);
   }
 
-  return <View style={styles.commentThread}><Pressable onPress={() => setIsExpanded((expanded) => !expanded)} style={styles.commentToggle}><Text style={styles.commentToggleText}>▢ {commentCount} comentarios</Text><Text style={styles.commentToggleArrow}>{isExpanded ? '−' : '+'}</Text></Pressable>{isExpanded && <View style={styles.commentContent}>{comments.map((comment) => { const commentUser = comment.userId === currentUser.id ? currentUser : commentUsers[comment.userId]; const author = commentUser || (comment.authorName ? { name: comment.authorName, photoUrl: comment.authorPhotoUrl } : null); return <View key={comment.id} style={styles.commentItem}><View style={styles.commentHeader}><View style={styles.commentAuthorInfo}>{author && <UserAvatar user={author} small />}<Text style={styles.commentAuthor}>{author?.name || comment.userId}</Text></View>{comment.userId === currentUser.id && <Pressable onPress={() => handleRemoveComment(comment)}><Text style={styles.commentDelete}>EXCLUIR</Text></Pressable>}</View><Text style={styles.commentBody}>{comment.text}</Text></View>; })}<View style={styles.commentInputRow}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Escreva um comentario" placeholderTextColor={palette.text} style={styles.commentInput} multiline /><Pressable onPress={handleAddComment} style={styles.commentSendButton}><Text style={styles.commentSendText}>ENVIAR</Text></Pressable></View></View>}</View>;
+  return <View style={styles.commentThread}><Pressable onPress={() => setIsExpanded((expanded) => !expanded)} style={styles.commentToggle}><Text style={styles.commentToggleText}>▢ {commentCount} comentarios</Text><Text style={styles.commentToggleArrow}>{isExpanded ? '−' : '+'}</Text></Pressable>{isExpanded && <View style={styles.commentContent}>{comments.map((comment) => { const commentUser = comment.userId === currentUser.id ? currentUser : commentUsers[comment.userId]; const author = commentUser || (comment.authorName ? { name: comment.authorName, photoUrl: comment.authorPhotoUrl } : null); return <View key={comment.id} style={styles.commentItem}><View style={styles.commentHeader}><Pressable disabled={!author} onPress={() => author && onUserPress(author)} style={styles.commentAuthorInfo}>{author && <UserAvatar user={author} small />}<Text style={styles.commentAuthor}>{author?.name || comment.userId}</Text></Pressable>{comment.userId === currentUser.id && <Pressable onPress={() => handleRemoveComment(comment)}><Text style={styles.commentDelete}>EXCLUIR</Text></Pressable>}</View><Text style={styles.commentBody}>{comment.text}</Text></View>; })}<View style={styles.commentInputRow}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Escreva um comentario" placeholderTextColor={palette.text} style={styles.commentInput} multiline /><Pressable onPress={handleAddComment} style={styles.commentSendButton}><Text style={styles.commentSendText}>ENVIAR</Text></Pressable></View></View>}</View>;
 }
 
-function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
+function ReviewSection({ albumId, currentUser, reviews, onReviewsChange, onUserPress }) {
   const normalizedAlbumId = String(albumId);
   const existingReview = reviews.find((review) => review.userId === currentUser.id);
   const [rating, setRating] = useState(existingReview?.rating || 0.5);
@@ -677,6 +705,8 @@ function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
       id: existingReview?.id || globalThis.crypto?.randomUUID?.() || `review-${Date.now()}`,
       albumId: normalizedAlbumId,
       userId: currentUser.id,
+      reviewerName: currentUser.name,
+      reviewerPhotoUrl: currentUser.photoUrl,
       rating,
       reviewText: reviewText.trim() || undefined,
       createdAt: existingReview?.createdAt || new Date().toISOString(),
@@ -698,12 +728,23 @@ function ReviewSection({ albumId, currentUser, reviews, onReviewsChange }) {
     })();
   }
 
-  return <View style={styles.reviewSection}><View style={styles.ratingSummary}><Text style={styles.reviewSectionTitle}>Avaliacoes</Text><View style={styles.averageBox}><Text style={styles.averageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.averageStars}>{average ? '★' : '☆'}</Text><Text style={styles.reviewCount}>{reviews.length} {reviews.length === 1 ? 'avaliacao' : 'avaliacoes'}</Text></View></View><Text style={styles.fieldLabel}>{existingReview ? 'SUA AVALIACAO' : 'AVALIE ESTE ALBUM'}</Text><View style={styles.ratingOptions}>{Array.from({ length: 10 }, (_, index) => (index + 1) / 2).map((option) => <Pressable key={option} onPress={() => setRating(option)} style={[styles.ratingOption, rating === option && styles.ratingOptionActive]}><Text style={[styles.ratingOptionText, rating === option && styles.ratingOptionTextActive]}>{option} ★</Text></Pressable>)}</View><TextInput value={reviewText} onChangeText={setReviewText} placeholder="Escreva uma resenha (opcional)" placeholderTextColor={palette.text} style={[styles.formInput, styles.reviewInput]} multiline textAlignVertical="top" /><Pressable onPress={handleSaveReview} style={styles.createButton}><Text style={styles.createButtonText}>{existingReview ? 'ATUALIZAR AVALIACAO' : 'SALVAR AVALIACAO'}</Text></Pressable><View style={styles.reviewList}>{reviews.length === 0 ? <Text style={styles.profileSecondary}>Ainda nao ha avaliacoes para este album.</Text> : reviews.map((review) => <ReviewItem key={review.id} review={review} currentUser={currentUser} onReviewsChange={onReviewsChange} />)}</View></View>;
+  return <View style={styles.reviewSection}><View style={styles.ratingSummary}><Text style={styles.reviewSectionTitle}>Avaliacoes</Text><View style={styles.averageBox}><Text style={styles.averageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.averageStars}>{average ? '★' : '☆'}</Text><Text style={styles.reviewCount}>{reviews.length} {reviews.length === 1 ? 'avaliacao' : 'avaliacoes'}</Text></View></View><Text style={styles.fieldLabel}>{existingReview ? 'SUA AVALIACAO' : 'AVALIE ESTE ALBUM'}</Text><View style={styles.ratingOptions}>{Array.from({ length: 10 }, (_, index) => (index + 1) / 2).map((option) => <Pressable key={option} onPress={() => setRating(option)} style={[styles.ratingOption, rating === option && styles.ratingOptionActive]}><Text style={[styles.ratingOptionText, rating === option && styles.ratingOptionTextActive]}>{option} ★</Text></Pressable>)}</View><TextInput value={reviewText} onChangeText={setReviewText} placeholder="Escreva uma resenha (opcional)" placeholderTextColor={palette.text} style={[styles.formInput, styles.reviewInput]} multiline textAlignVertical="top" /><Pressable onPress={handleSaveReview} style={styles.createButton}><Text style={styles.createButtonText}>{existingReview ? 'ATUALIZAR AVALIACAO' : 'SALVAR AVALIACAO'}</Text></Pressable><View style={styles.reviewList}>{reviews.length === 0 ? <Text style={styles.profileSecondary}>Ainda nao ha avaliacoes para este album.</Text> : reviews.map((review) => <ReviewItem key={review.id} review={review} currentUser={currentUser} onReviewsChange={onReviewsChange} onUserPress={onUserPress} />)}</View></View>;
 }
 
-function ReviewItem({ review, currentUser, onReviewsChange }) {
+function ReviewItem({ review, currentUser, onReviewsChange, onUserPress }) {
   const likedBy = review.likedBy ?? [];
   const isLiked = likedBy.includes(currentUser.id);
+  const [reviewUser, setReviewUser] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    getUserById(review.userId).then((user) => {
+      if (mounted) setReviewUser(user);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [review.userId]);
 
   async function handleToggleLike() {
     try {
@@ -714,10 +755,28 @@ function ReviewItem({ review, currentUser, onReviewsChange }) {
     }
   }
 
-  return <View style={styles.reviewItem}><View style={styles.reviewItemHeader}><Text style={styles.reviewerName}>{review.userId === currentUser.id ? currentUser.name : review.userId}</Text><Text style={styles.reviewRating}>{review.rating.toFixed(1)} ★</Text></View>{Boolean(review.reviewText) && <Text style={styles.reviewText}>{review.reviewText}</Text>}<View style={styles.reviewSocialRow}><Pressable onPress={handleToggleLike} style={styles.socialButton}><Text style={[styles.likeIcon, isLiked && styles.likeIconActive]}>♥</Text><Text style={[styles.socialCount, isLiked && styles.socialCountActive]}>{likedBy.length}</Text></Pressable><ReviewComments review={review} currentUser={currentUser} /></View></View>;
+  function handleRemoveReview() {
+    const canRemoveReview = currentUser.name === 'pedroooooo' || String(review.userId) === String(currentUser.id);
+    if (!canRemoveReview) return;
+
+    Alert.alert('Excluir avaliacao', 'Tem certeza que deseja excluir esta avaliacao?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          const updatedReviews = await removeReview(review.id);
+          onReviewsChange(updatedReviews.filter((item) => String(item.albumId) === String(review.albumId)));
+        },
+      },
+    ]);
+  }
+
+  const author = review.userId === currentUser.id ? currentUser : reviewUser || (review.reviewerName ? { name: review.reviewerName, photoUrl: review.reviewerPhotoUrl } : null);
+  return <View style={styles.reviewItem}><View style={styles.reviewItemHeader}><Pressable disabled={!author} onPress={() => author && onUserPress(author)} style={styles.reviewerInfo}>{author && <UserAvatar user={author} small />}<Text style={styles.reviewerName}>{author?.name || review.userId}</Text><VerifiedBadge name={author?.name} /></Pressable><View style={styles.reviewHeaderActions}><Text style={styles.reviewRating}>{review.rating.toFixed(1)} ★</Text>{(currentUser.name === 'pedroooooo' || String(review.userId) === String(currentUser.id)) && <Pressable onPress={handleRemoveReview}><Text style={styles.reviewDelete}>EXCLUIR</Text></Pressable>}</View></View>{Boolean(review.reviewText) && <Text style={styles.reviewText}>{review.reviewText}</Text>}<View style={styles.reviewSocialRow}><Pressable onPress={handleToggleLike} style={styles.socialButton}><Text style={[styles.likeIcon, isLiked && styles.likeIconActive]}>♥</Text><Text style={[styles.socialCount, isLiked && styles.socialCountActive]}>{likedBy.length}</Text></Pressable><ReviewComments review={review} currentUser={currentUser} onUserPress={onUserPress} /></View></View>;
 }
 
-function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete, onUserChange }) {
+function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete, onUserChange, onUserPress }) {
   const [albumReviews, setAlbumReviews] = useState([]);
   const average = albumReviews.length > 0 ? albumReviews.reduce((total, review) => total + review.rating, 0) / albumReviews.length : 0;
 
@@ -756,13 +815,14 @@ function AlbumDetails({ album, currentUser, onBack, onEdit, onDelete, onUserChan
     };
   }, [album.id]);
 
-  return <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.details} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled"><Pressable onPress={onBack} style={styles.backButton}><Text style={styles.backButtonText}>← VOLTAR</Text></Pressable><AlbumCover album={album} large /><Text style={styles.detailsEyebrow}>DETALHE DO ALBUM</Text><View style={styles.detailsTitleRow}><View style={styles.detailsTitleWrap}><Text style={styles.detailsTitle}>{album.title}</Text><Text style={styles.detailsArtist}>{album.artist || 'Artista desconhecido'}</Text></View><View style={styles.detailAverage}><Text style={styles.detailAverageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.detailAverageStar}>★</Text></View></View>{Boolean(album.description) && <Text style={styles.detailsDescription}>{album.description}</Text>}<View style={styles.detailsActions}><Pressable onPress={onEdit} style={styles.editButton}><Text style={styles.editButtonText}>EDITAR</Text></Pressable><Pressable onPress={handleToggleFavorite} style={[styles.editButton, isFavorite && styles.editButtonActive]}><Text style={[styles.editButtonText, isFavorite && styles.detailAverageStar]}>{isFavorite ? '♥ FAVORITO' : '♥ FAVORITAR'}</Text></Pressable><Pressable onPress={onDelete} style={styles.deleteButton}><Text style={styles.deleteButtonText}>EXCLUIR</Text></Pressable></View><ReviewSection albumId={album.id} currentUser={currentUser} reviews={albumReviews} onReviewsChange={setAlbumReviews} /></ScrollView>;
+  return <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.details} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled"><Pressable onPress={onBack} style={styles.backButton}><Text style={styles.backButtonText}>← VOLTAR</Text></Pressable><AlbumCover album={album} large /><Text style={styles.detailsEyebrow}>DETALHE DO ALBUM</Text><View style={styles.detailsTitleRow}><View style={styles.detailsTitleWrap}><Text style={styles.detailsTitle}>{album.title}</Text><Text style={styles.detailsArtist}>{album.artist || 'Artista desconhecido'}</Text></View><View style={styles.detailAverage}><Text style={styles.detailAverageValue}>{average ? average.toFixed(1) : '--'}</Text><Text style={styles.detailAverageStar}>★</Text></View></View>{Boolean(album.description) && <Text style={styles.detailsDescription}>{album.description}</Text>}<View style={styles.detailsActions}>{currentUser?.name === 'pedroooooo' && <Pressable onPress={onEdit} style={styles.editButton}><Text style={styles.editButtonText}>EDITAR</Text></Pressable>}<Pressable onPress={handleToggleFavorite} style={[styles.editButton, styles.favoriteButton, isFavorite && styles.editButtonActive]}><Text numberOfLines={1} style={[styles.editButtonText, isFavorite && styles.favoriteButtonText]}>{isFavorite ? '♥ FAVORITO' : '♥ FAVORITAR'}</Text></Pressable>{currentUser?.name === 'pedroooooo' && <Pressable onPress={onDelete} style={styles.deleteButton}><Text style={styles.deleteButtonText}>EXCLUIR</Text></Pressable>}</View><ReviewSection albumId={album.id} currentUser={currentUser} reviews={albumReviews} onReviewsChange={setAlbumReviews} onUserPress={onUserPress} /></ScrollView>;
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [albums, setAlbums] = useState([]);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [selectedPublicUser, setSelectedPublicUser] = useState(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
@@ -788,11 +848,15 @@ export default function App() {
   }
 
   function handleAlbumUpdated(album) {
+    if (currentUser?.name !== 'pedroooooo') return;
+
     setAlbums((currentAlbums) => currentAlbums.map((item) => item.id === album.id ? album : item));
     setSelectedAlbum(album);
   }
 
   function handleAlbumDelete() {
+    if (currentUser?.name !== 'pedroooooo') return;
+
     Alert.alert('Excluir album', `Tem certeza que deseja excluir ${selectedAlbum.title}?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
@@ -829,7 +893,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
-      <View style={styles.content}>{selectedAlbum ? <AlbumDetails album={selectedAlbum} currentUser={currentUser} onBack={() => setSelectedAlbum(null)} onEdit={() => setIsEditModalVisible(true)} onDelete={handleAlbumDelete} onUserChange={setCurrentUser} /> : activeTab === 'home' ? <HomeScreen currentUser={currentUser} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'explore' ? <ExploreScreen albums={albums} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'profile' ? <ProfileScreen user={currentUser} albums={albums} onEdit={() => setIsEditModalVisible(true)} onLogout={handleLogout} /> : activeTab === 'activity' ? <ActivityScreen currentUser={currentUser} onAlbumPress={setSelectedAlbum} /> : <View />}</View>
+      <View style={styles.content}>{selectedPublicUser ? <PublicProfileScreen user={selectedPublicUser} currentUser={currentUser} onBack={() => setSelectedPublicUser(null)} onUserChange={setCurrentUser} onAlbumPress={setSelectedAlbum} /> : selectedAlbum ? <AlbumDetails album={selectedAlbum} currentUser={currentUser} onBack={() => setSelectedAlbum(null)} onEdit={() => setIsEditModalVisible(true)} onDelete={handleAlbumDelete} onUserChange={setCurrentUser} onUserPress={setSelectedPublicUser} /> : activeTab === 'home' ? <HomeScreen currentUser={currentUser} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'explore' ? <ExploreScreen albums={albums} currentUser={currentUser} onAlbumPress={setSelectedAlbum} onAlbumAdded={handleAlbumAdded} /> : activeTab === 'profile' ? <ProfileScreen user={currentUser} albums={albums} onEdit={() => setIsEditModalVisible(true)} onLogout={handleLogout} onAlbumPress={setSelectedAlbum} /> : activeTab === 'activity' ? <ActivityScreen currentUser={currentUser} onAlbumPress={setSelectedAlbum} /> : <View />}</View>
       {selectedAlbum && <AddAlbumModal key={selectedAlbum.id} visible={isEditModalVisible} initialAlbum={selectedAlbum} onClose={() => setIsEditModalVisible(false)} onSaved={handleAlbumUpdated} />}
       {!selectedAlbum && <ProfileEditorModal visible={isEditModalVisible} user={currentUser} albums={albums} onClose={() => setIsEditModalVisible(false)} onSaved={setCurrentUser} />}
       <View style={styles.navBar}>
@@ -857,6 +921,7 @@ const styles = StyleSheet.create({
   recentAlbumTitle: { color: '#F5F5F5', fontSize: 12, fontWeight: '700', marginTop: 8 },
   explore: { flex: 1, paddingHorizontal: 20, paddingTop: 24 },
   exploreHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 },
+  exploreTrending: { flexShrink: 0, marginBottom: 18 },
   eyebrow: { color: palette.accent, fontSize: 9, fontWeight: '700', letterSpacing: 1.6, marginBottom: 8 },
   pageTitle: { color: palette.title, fontSize: 36, fontWeight: '800' },
   addButton: { backgroundColor: palette.accent, minHeight: 42, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -915,6 +980,8 @@ const styles = StyleSheet.create({
   profile: { padding: 24, paddingBottom: 40 },
   profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
   profileIdentity: { flex: 1, marginLeft: 18 },
+  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  verifiedBadge: { width: 18, height: 18 },
   userAvatar: { width: 72, height: 72, backgroundColor: palette.surface },
   smallUserAvatar: { width: 28, height: 28, borderRadius: 14 },
   largeUserAvatar: { width: 104, height: 104, borderRadius: 52 },
@@ -925,11 +992,18 @@ const styles = StyleSheet.create({
   profileName: { color: '#F5F5F5', fontSize: 28, fontWeight: '800', marginBottom: 7 },
   profileBio: { color: palette.text, fontSize: 13, lineHeight: 19 },
   followStats: { flexDirection: 'row', gap: 42, borderTopWidth: 1, borderBottomWidth: 1, borderColor: palette.border, paddingVertical: 15, marginBottom: 16 },
+  relationList: { marginBottom: 24 },
+  relationItem: { flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: palette.border, paddingVertical: 10 },
+  relationName: { color: '#F5F5F5', fontSize: 13, fontWeight: '600' },
   followNumber: { color: '#F5F5F5', fontSize: 21, fontWeight: '700' },
   followLabel: { color: palette.text, fontSize: 8, letterSpacing: 1, marginTop: 4 },
   profileEditText: { color: palette.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   profileActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 32 },
   profileEditButton: { alignSelf: 'flex-start', borderWidth: 1, borderColor: palette.accent, paddingHorizontal: 15, paddingVertical: 11 },
+  followButton: { alignSelf: 'flex-start', borderWidth: 1, borderColor: palette.accent, paddingHorizontal: 22, paddingVertical: 12, marginBottom: 28 },
+  followButtonActive: { backgroundColor: palette.accent },
+  followButtonText: { color: palette.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  followButtonTextActive: { color: palette.background },
   logoutButton: { alignSelf: 'flex-start', borderWidth: 1, borderColor: '#FF6B6B', paddingHorizontal: 15, paddingVertical: 11 },
   logoutButtonText: { color: '#FF6B6B', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   profileSectionTitle: { color: '#F5F5F5', fontSize: 18, fontWeight: '700', marginBottom: 14 },
@@ -981,8 +1055,10 @@ const styles = StyleSheet.create({
   detailsPlaceholder: { color: palette.text, fontSize: 14, lineHeight: 21, marginTop: 32, maxWidth: 300 },
   detailsActions: { flexDirection: 'row', gap: 10, marginTop: 28, marginBottom: 24 },
   editButton: { borderWidth: 1, borderColor: palette.accent, paddingHorizontal: 22, paddingVertical: 13 },
+  favoriteButton: { width: 148, paddingHorizontal: 8, alignItems: 'center', flexShrink: 0 },
   editButtonActive: { backgroundColor: palette.accent },
   editButtonText: { color: palette.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  favoriteButtonText: { color: '#FFFFFF' },
   deleteButton: { borderWidth: 1, borderColor: '#FF6B6B', paddingHorizontal: 22, paddingVertical: 13 },
   deleteButtonText: { color: '#FF6B6B', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   reviewSection: { borderTopWidth: 1, borderTopColor: palette.border, paddingTop: 24, marginTop: 8, paddingBottom: 28 },
@@ -1001,7 +1077,10 @@ const styles = StyleSheet.create({
   reviewList: { marginTop: 28 },
   reviewItem: { borderTopWidth: 1, borderTopColor: palette.border, paddingVertical: 14 },
   reviewItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
+  reviewHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  reviewerInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   reviewerName: { color: '#F5F5F5', fontSize: 13, fontWeight: '700' },
+  reviewDelete: { color: '#FF6B6B', fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
   reviewRating: { color: palette.accent, fontSize: 12, fontWeight: '800' },
   reviewText: { color: palette.text, fontSize: 13, lineHeight: 19 },
   reviewSocialRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 18 },

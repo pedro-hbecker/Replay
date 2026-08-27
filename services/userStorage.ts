@@ -59,7 +59,7 @@ export async function getCurrentUser(): Promise<User | null> {
 export async function getUserById(id: string): Promise<User | null> {
   try {
     const users = await readStoredUsers();
-    return users.find((user) => user.id === id) || null;
+    return users.find((user) => String(user.id) === String(id)) || null;
   } catch {
     return null;
   }
@@ -115,6 +115,30 @@ export async function clearCurrentUser(): Promise<void> {
   } else {
     await AsyncStorage.removeItem(STORAGE_KEY);
   }
+}
+
+export async function toggleFollowUser(userId: string): Promise<{ user: User | null; targetUser: User | null; following: boolean }> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || String(currentUser.id) === String(userId)) {
+    return { user: currentUser, targetUser: null, following: false };
+  }
+
+  const targetUser = await getUserById(userId);
+  if (!targetUser) return { user: currentUser, targetUser: null, following: false };
+
+  const followingIds = Array.isArray(currentUser.followingIds) ? currentUser.followingIds : [];
+  const targetFollowerIds = Array.isArray(targetUser.followerIds) ? targetUser.followerIds : [];
+  const isFollowing = followingIds.some((id) => String(id) === String(userId));
+  const nextFollowingIds = isFollowing
+    ? followingIds.filter((id) => String(id) !== String(userId))
+    : [...followingIds, targetUser.id];
+  const nextFollowerIds = isFollowing
+    ? targetFollowerIds.filter((id) => String(id) !== String(currentUser.id))
+    : [...targetFollowerIds, currentUser.id];
+
+  await saveUser({ ...targetUser, followerIds: nextFollowerIds });
+  const updatedCurrentUser = await saveUser({ ...currentUser, followingIds: nextFollowingIds });
+  return { user: updatedCurrentUser, targetUser: { ...targetUser, followerIds: nextFollowerIds }, following: !isFollowing };
 }
 
 export async function updateUser(data: Partial<User>): Promise<User | null> {
